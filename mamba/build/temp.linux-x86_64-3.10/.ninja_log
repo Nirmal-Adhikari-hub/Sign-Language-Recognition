@@ -1,0 +1,11 @@
+# ninja log v5
+0	12773	1724728555640058639	/home/kks/workspace/SSM-Based-Movie-Genre-Classification/sm/videomamba/mamba/build/temp.linux-x86_64-3.10/csrc/selective_scan/selective_scan.o	498de822ca3ae7b6
+3	51363	1724728594200597620	/home/kks/workspace/SSM-Based-Movie-Genre-Classification/sm/videomamba/mamba/build/temp.linux-x86_64-3.10/csrc/selective_scan/selective_scan_fwd_fp16.o	e08a54af0eccbc0f
+4	51443	1724728594284596594	/home/kks/workspace/SSM-Based-Movie-Genre-Classification/sm/videomamba/mamba/build/temp.linux-x86_64-3.10/csrc/selective_scan/selective_scan_fwd_fp32.o	49fa826f0cb6d136
+3	52580	1724728595415582784	/home/kks/workspace/SSM-Based-Movie-Genre-Classification/sm/videomamba/mamba/build/temp.linux-x86_64-3.10/csrc/selective_scan/selective_scan_fwd_bf16.o	b9e69a1f530640a6
+2	93343	1724728636175074731	/home/kks/workspace/SSM-Based-Movie-Genre-Classification/sm/videomamba/mamba/build/temp.linux-x86_64-3.10/csrc/selective_scan/selective_scan_bwd_fp32_real.o	30c8df5254075305
+1	94516	1724728637346059845	/home/kks/workspace/SSM-Based-Movie-Genre-Classification/sm/videomamba/mamba/build/temp.linux-x86_64-3.10/csrc/selective_scan/selective_scan_bwd_fp16_real.o	135f7b1d1bd161a0
+0	97724	1724728640540019163	/home/kks/workspace/SSM-Based-Movie-Genre-Classification/sm/videomamba/mamba/build/temp.linux-x86_64-3.10/csrc/selective_scan/selective_scan_bwd_bf16_real.o	61576ddc05bb4138
+2	130773	1724728673585591569	/home/kks/workspace/SSM-Based-Movie-Genre-Classification/sm/videomamba/mamba/build/temp.linux-x86_64-3.10/csrc/selective_scan/selective_scan_bwd_fp32_complex.o	19ece7078c7adbd0
+1	131712	1724728674518579324	/home/kks/workspace/SSM-Based-Movie-Genre-Classification/sm/videomamba/mamba/build/temp.linux-x86_64-3.10/csrc/selective_scan/selective_scan_bwd_fp16_complex.o	182bad3c30c8aa25
+0	134785	1724728677601538794	/home/kks/workspace/SSM-Based-Movie-Genre-Classification/sm/videomamba/mamba/build/temp.linux-x86_64-3.10/csrc/selective_scan/selective_scan_bwd_bf16_complex.o	8224d967a928231a
