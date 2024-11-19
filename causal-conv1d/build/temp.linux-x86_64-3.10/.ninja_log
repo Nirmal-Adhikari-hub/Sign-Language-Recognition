@@ -1,5 +1,0 @@
-# ninja log v5
-2	2981	1724728511714559330	/home/kks/workspace/SSM-Based-Movie-Genre-Classification/sm/videomamba/causal-conv1d/build/temp.linux-x86_64-3.10/csrc/causal_conv1d_update.o	581100d9a5c3b9a5
-1	7841	1724728516568505348	/home/kks/workspace/SSM-Based-Movie-Genre-Classification/sm/videomamba/causal-conv1d/build/temp.linux-x86_64-3.10/csrc/causal_conv1d_fwd.o	d6feb694f6ec965d
-0	13199	1724728521933445287	/home/kks/workspace/SSM-Based-Movie-Genre-Classification/sm/videomamba/causal-conv1d/build/temp.linux-x86_64-3.10/csrc/causal_conv1d.o	5c5ad11c849489c4
-1	22768	1724728531479337397	/home/kks/workspace/SSM-Based-Movie-Genre-Classification/sm/videomamba/causal-conv1d/build/temp.linux-x86_64-3.10/csrc/causal_conv1d_bwd.o	8074cd20b5214485

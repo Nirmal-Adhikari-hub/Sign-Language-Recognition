@@ -1,0 +1,62 @@
+# Ignore compiled files and binaries
+*.so
+*.o
+*.a
+*.out
+
+# Ignore build folders
+build/
+__pycache__/
+
+# Ignore virtual environment folders
+env/
+venv/
+
+# Ignore log and cache files
+*.log
+*.cache
+
+# Ignore large binary files
+mamba/build/
+
+# Ignore the builds
+causal-conv1d/build
+
+# Ignore the builds
+code/build
+
+
+# Ignore Python virtual environments
+.env/
+.venv/
+
+# Ignore Python cache files
+*.pyc
+__pycache__/
+
+# Ignore Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Ignore compiled C/C++ files
+*.o
+*.so
+*.out
+*.a
+
+# Ignore build tools
+build/
+dist/
+*.egg-info/
+
+# Ignore log files
+*.log
+*.tmp
+
+# Ignore specific folders in a directory
+mamba/build/
+
+# Ignore all files of a type but allow specific ones
+*.txt
+!README.txt
+
+
