@@ -43,7 +43,6 @@ torchrun --nproc_per_node="$N_GPUS" --master_port="$MASTER_PORT" run.py \
         --T_0 "$T_0" \
         --T_mul "$T_mul" \
         --lr_gamma "$lr_gamma" \
-        --aa "rand-n9-mstd0.5" \
         --metadata_path "/home/ubuntu/workspace/data/metadata" \
         --video_path "/home/ubuntu/workspace/data/videos" \
         --audio_path "/home/ubuntu/workspace/data/audios_32" \

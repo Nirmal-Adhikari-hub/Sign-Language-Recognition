@@ -10,7 +10,7 @@ from torchvision import transforms
 from PIL import Image
 import zipfile
 # from .random_erasing import RandomErasing
-sys.path.append('/home/nirmal/sm/code')
+sys.path.insert(0, '/home/nirmal/sm/code')
 # print(sys.path)
 # sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
@@ -20,6 +20,35 @@ from video_transforms import (
 )
 from volume_transforms import ClipToTensor
 from utils import ZipReader
+
+
+import matplotlib.pyplot as plt
+
+def plot_samples(sampled_frames, frame_idx=0, sample_idx=0, is_single=False):
+    """
+    Plot a specific frame from a specific sample.
+    :param sampled_frames: List of tensors (C, T, H, W) or single tensor.
+    :param frame_idx: Index of the frame to visualize.
+    :param sample_idx: Index of the sample (only for training mode).
+    :param is_single: Flag for single tensor input (validation/test modes).
+    """
+    if is_single:
+        # Handle single tensor case
+        frame_tensor = sampled_frames  # (C, T, H, W)
+        frame = frame_tensor.permute(1, 2, 3, 0)[frame_idx].numpy()  # (C, T, H, W) -> (T, H, W, C)
+    else:
+        # Training mode: Multiple samples
+        frame_tensor = sampled_frames[sample_idx]  # (C, T, H, W)
+        frame = frame_tensor.permute(1, 2, 3, 0)[frame_idx].numpy()  # (C, T, H, W) -> (T, H, W, C)
+
+    # Plot the frame
+    plt.imshow(frame)
+    plt.title(f"Sample {sample_idx if not is_single else 'Single'}, Frame {frame_idx}")
+    plt.axis("off")
+    plt.show()
+
+
+
 
 class Phoenix2014Video(Dataset):
     def __init__(
@@ -68,8 +97,8 @@ class Phoenix2014Video(Dataset):
             self.glosses.append(gloss_ids)
             self.n_frames.append(anno['num_frames']) # 176, ...
             for i in range(anno['num_frames']):
-                self.img_paths.append(f"{self.anno_path}@{anno['name']}.avi_pid0_fn{i:06d}-0.png") # 'data/phoenix-2014/phoenix-2014-videos.zip@fullFrame-210x260px/train/01April_2010_Thursday_heute_default-0/1/01April_2010_Thursday_heute.avi_pid0_fn000000-0.png', ...
-
+                self.img_paths.append(f"{self.video_path}@{anno['name']}.avi_pid0_fn{i:06d}-0.png") # 'data/phoenix-2014/phoenix-2014-videos.zip@fullFrame-210x260px/train/01April_2010_Thursday_heute_default-0/1/01April_2010_Thursday_heute.avi_pid0_fn000000-0.png', ...
+        # print(f"ANNNNOOOOOOO ------------- {anno}")
         if mode == 'train':
             pass
         elif mode == 'validation':
@@ -107,47 +136,79 @@ class Phoenix2014Video(Dataset):
         # frames = [self.read_img(path) for path in selected_frame_paths]
 
         # Load frames dynamically from zip
-        frames = [self.read_img_from_zip(path) for path in selected_frame_paths]
-        """
-        Question:
-
-        Only in evaluation mode, we can use `data_transform` and `data_resize`.
-        I think we should use rand-augment module in train mode. You can refer to `aug_frame` func below some classes
-
-        Answer: Ah, this is just for testing whether the resizing and transform operations are working or not. Since there is no augmentation code in the __init__ code for training,
-        I was confused what to do while in training. I was going to ask you about this. But now I will use something like _aug_frames functions in the classes below.
-        """
+        frames = [self.read_img(path) for path in selected_frame_paths]
+        # print(f"FRAMESSSSSSSSSSSSSSSSSS SHAPE: {len(frames), frames[-1].shape}")
         # Apply transformations
         if self.mode == 'train' and self.aug:
-            frames = [self.data_transform(frame) for frame in frames]
+            # Initialize lists for multiple samples
+            sampled_frames = []
+            sampled_labels = []
+
+            # Generate original and augmented samples
+            for i in range(self.args.n_samples):
+                if i == 0:  # First sample is the original
+                    sampled_frames.append(torch.tensor(frames).permute(3, 0, 1, 2))  # (T, H, W, C) -> (C, T, H, W)
+                else:  # Subsequent samples are augmented
+                    aug_frames = self._aug_frame(frames)
+                    sampled_frames.append(aug_frames)
+
+                sampled_labels.append(torch.tensor(gloss_ids, dtype=torch.long))
+
+            # Return all samples and labels
+            return sampled_frames, sampled_labels, idx
         else:
-            frames = [self.data_resize(frame) for frame in frames]
-            frames = [self.data_transform(frame) for frame in frames]
+            # print(f"NOT IN THE TRAINING PHASE TOOOOOOOOOOOOO !!")
+            frames = self.data_resize(frames)
+            frames = self.data_transform(frames)
 
-        # Convert frames to tensor
-        frames_tensor = torch.stack(frames, dim=0) # Shape: (clip_len, C, H, W)
-        
-        return frames_tensor, torch.tensor(gloss_ids, dtype=torch.long)
+            # Debug transformed frame shape
+            # print(f"FRAMES SHAPE AFTER TRANSFORM: {frames.shape}")
 
-    """
-    Question:
-
-    This func takes a lot of times, How can we imporve this problem? Why don't you use `ZipReader` module?
-    """
-    def read_img_from_zip(self, path):
+            # # Convert frames to tensor
+            # frames_tensor = torch.stack(frames, dim=0) # Shape: (clip_len, C, H, W)
+            
+            return frames, torch.tensor(gloss_ids, dtype=torch.long), idx
+    
+    def _aug_frame(self, buffer):
         """
-        Read an image from the zip file dynamically.
+        Perform random augmentations on the video frames.
+        buffer: List of frames (H, W, C) as NumPy arrays.
+        Returns: Augmented tensor of shape (C, T, H, W).
+        """
+        # Random augmentation transform
+        aug_transform = create_random_augment(
+            input_size=self.aug_size,
+            auto_augment=self.args.aa if self.args and hasattr(self.args, "aa") else "rand-m9-mstd0.5-inc1",
+            interpolation=self.args.train_interpolation if self.args and hasattr(self.args, "train_interpolation") else "bilinear",
+        )
+        
+        # Convert NumPy frames to PIL images for transformation
+        buffer = [transforms.ToPILImage()(frame) for frame in buffer]  # (T, H, W, C)
+        buffer = aug_transform(buffer)  # Apply augmentation (returns list of PIL Images)
+        
+        # Convert back to tensors
+        buffer = [transforms.ToTensor()(img) for img in buffer]  # (T, C, H, W)
+        buffer = torch.stack(buffer)  # (T, C, H, W)
+        
+        # Permute to (C, T, H, W)
+        buffer = buffer.permute(1, 0, 2, 3)  # (T, C, H, W) -> (C, T, H, W)
+        
+        return buffer
+
+
+
+    def read_img(self, path):
+        """
+        Use ZipReader to read an image from a zip-style path.
         """
         try:
-            # Extract the relative path inside the zip
-            zip_path = path.split('@')[-1]  # Remove the prefix
-            with zipfile.ZipFile(self.video_path, 'r') as zfile:
-                with zfile.open(zip_path, 'r') as file:
-                    image_data = file.read()
-                    image = Image.open(io.BytesIO(image_data)).convert('RGB')
-                    return image
+            # print(f"HEREREERERE {path}")
+            img_data = ZipReader.read(path)
+            image = Image.open(io.BytesIO(img_data)).convert('RGB')
+            # print(f"IMAGEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE {np.array(image).shape}")
+            return np.array(image)  # Convert to NumPy array
         except Exception as e:
-            raise RuntimeError(f"Failed to read image {path} from zip file: {e}")
+            raise RuntimeError(f"Failed to read image {path}: {e}")
 
         
 
@@ -156,33 +217,63 @@ class Phoenix2014Video(Dataset):
         if n_frames >= self.clip_len:
             return frame_paths[-self.clip_len:] 
         else:
-            """
-            Question:
-
-            Why did you use `frame_paths[0]`? From what I understand, `frame_paths[0]` seems to represent
-            the path to the first frame. In that case, shouldn't you return `padding + frame_paths` instead of
-            `frame_paths + padding`? To return `frame_paths + padding`, wouldn't it make more sense to select the last frame? 
-            """
-            padding = [frame_paths[0]] * (self.clip_len - n_frames)
+            padding = [frame_paths[-1]] * (self.clip_len - n_frames)
             return frame_paths + padding
 
 
 if __name__ == "__main__":
-    dataset = Phoenix2014Video(
+    from argparse import Namespace
+    # Training mode test
+    dataset_train = Phoenix2014Video(
         anno_path="/nas/Dataset/Phoenix/phoenix-2014.train",
         gloss_to_id_path="/nas/Dataset/Phoenix/gloss2ids.pkl",
         video_path="/nas/Dataset/Phoenix/phoenix-2014-videos.zip",
         mode="train",
         clip_len=256,
+        target_size=(224, 224),
+        args=Namespace(n_samples=3, aa="rand-m9-mstd0.5-inc1", train_interpolation="bilinear", reprob=0.2)
+    )
+
+    sampled_frames, sampled_labels, idx = dataset_train[0]
+    print(f"Training mode:")
+    print(f"  Number of Samples: {len(sampled_frames)}")
+    print(f"  Frame Shape (Original): {sampled_frames[0].shape}")
+    print(f"  Frame Shape (Augmented): {sampled_frames[1].shape}")
+
+    # Plot original and augmented frames
+    plot_samples(sampled_frames, frame_idx=0, sample_idx=0)  # Original
+    plot_samples(sampled_frames, frame_idx=0, sample_idx=1)  # Augmented
+
+    # Validation mode test
+    dataset_val = Phoenix2014Video(
+        anno_path="/nas/Dataset/Phoenix/phoenix-2014.dev",
+        gloss_to_id_path="/nas/Dataset/Phoenix/gloss2ids.pkl",
+        video_path="/nas/Dataset/Phoenix/phoenix-2014-videos.zip",
+        mode="validation",
+        clip_len=256,
         target_size=(224, 224)
     )
 
-    # Test data loading
-    for i in range(2):  # Load two samples
-        frames, gloss_ids = dataset[i]
-        print(f"Sample {i+1}:")
-        print(f"  Frames Shape: {frames.shape}")  # Should be (256, 3, 224, 224)
-        print(f"  Gloss IDs: {gloss_ids}")       # List of gloss indices
+    frames, labels, idx = dataset_val[0]
+    print(f"Validation mode:")
+    print(f"  Frame Shape: {frames.shape}")
+    plot_samples(frames, frame_idx=0, is_single=True)
+
+    # Test mode test
+    dataset_test = Phoenix2014Video(
+        anno_path="/nas/Dataset/Phoenix/phoenix-2014.test",
+        gloss_to_id_path="/nas/Dataset/Phoenix/gloss2ids.pkl",
+        video_path="/nas/Dataset/Phoenix/phoenix-2014-videos.zip",
+        mode="test",
+        clip_len=256,
+        target_size=(224, 224)
+    )
+
+    frames, labels, idx = dataset_test[0]
+    print(f"Test mode:")
+    print(f"  Frame Shape: {frames.shape}")
+    plot_samples(frames, frame_idx=0, is_single=True)
+
 
 
 

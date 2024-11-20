@@ -889,6 +889,7 @@ class ZipReader(object):
         Reads the binary content of the file from within the zip file.
         """
         zip_path, path_img = ZipReader.split_zip_style_path(path)
+        # print(f"HEREEEEEEEEEEEEEEEEEEEEEEEE {zip_path, path_img}")
         zfile = ZipReader.get_zipfile(zip_path)
         data = zfile.read(path_img)
         return data

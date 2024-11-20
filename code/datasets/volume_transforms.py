@@ -28,8 +28,10 @@ class ClipToTensor(object):
         Args: clip (list of numpy.ndarray): clip (list of images)
         to be converted to tensor.
         """
+        
         # Retrieve shape
         if isinstance(clip[0], np.ndarray):
+            # print(f"FROM THE VOLUME_TRANSFORMS: =========== {clip[0].shape, len(clip)}")
             h, w, ch = clip[0].shape
             assert ch == self.channel_nb, 'Got {0} instead of 3 channels'.format(
                 ch)
@@ -64,6 +66,7 @@ class ClipToTensor(object):
                 tensor_clip = tensor_clip.float()
             if self.div_255:
                 tensor_clip = torch.div(tensor_clip, 255)
+            print(f"TENSOR CLIP {tensor_clip.shape}")
             return tensor_clip
 
 

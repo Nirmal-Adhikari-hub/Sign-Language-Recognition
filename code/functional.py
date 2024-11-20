@@ -24,6 +24,7 @@ def crop_clip(clip, min_h, min_w, h, w):
 
 
 def resize_clip(clip, size, interpolation='bilinear'):
+    # print(f"FROM FUNCTIONAL.PY, RESIZE_CLIP THE CLIP SHAPE: {clip[0].shape, len(clip)}")
     if isinstance(clip[0], np.ndarray):
         if isinstance(size, numbers.Number):
             im_h, im_w, im_c = clip[0].shape
@@ -42,6 +43,7 @@ def resize_clip(clip, size, interpolation='bilinear'):
         scaled = [
             cv2.resize(img, size, interpolation=np_inter) for img in clip
         ]
+        # print(F"SCALEDDDDDDDDDDDDDDDDDDD=============== {scaled[0].shape, len(scaled)}")
     elif isinstance(clip[0], PIL.Image.Image):
         if isinstance(size, numbers.Number):
             im_w, im_h = clip[0].size
@@ -84,6 +86,9 @@ def normalize(clip, mean, std, inplace=False):
     dtype = clip.dtype
     mean = torch.as_tensor(mean, dtype=dtype, device=clip.device)
     std = torch.as_tensor(std, dtype=dtype, device=clip.device)
+    # print(f"FROM NORMALIZE {clip.shape} MEAN AND STD {mean.shape, std.shape}")
     clip.sub_(mean[:, None, None, None]).div_(std[:, None, None, None])
+
+    # print(f"FROM NORMALIZE {clip.shape}")
 
     return clip

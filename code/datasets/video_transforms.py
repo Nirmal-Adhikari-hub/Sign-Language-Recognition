@@ -17,6 +17,8 @@ import numbers
 import PIL
 import torchvision
 
+import sys
+print(sys.path)
 import functional as FF
 
 _pil_interpolation_to_str = {
@@ -988,6 +990,9 @@ class Resize(object):
         self.interpolation = interpolation
 
     def __call__(self, clip):
+        # Ensure all frames in the clip are NumPy arrays
+        # clip = [np.array(frame) if isinstance(frame, Image.Image) else frame for frame in clip]
+        print(f"FROM VIDEO TRANSFORMS< CLIP IS RECEIVED AS: { clip[0].shape, len(clip)}")
         resized = FF.resize_clip(
             clip, (self.size[1], self.size[0]), interpolation=self.interpolation)
         return resized
@@ -1277,6 +1282,7 @@ class Normalize(object):
         Returns:
             Tensor: Normalized Tensor clip.
         """
+        # clip = clip.permute(1,0,2,3) # Changed from (C,T,H,W) to expected (T,C,H,W)
         return FF.normalize(clip, self.mean, self.std)
 
     def __repr__(self):
