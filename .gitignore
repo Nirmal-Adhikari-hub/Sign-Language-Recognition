@@ -18,6 +18,9 @@ venv/
 
 # Ignore large binary files
 mamba/build/
+TwoStreamNetwork/data/
+TwoStreamNetwork/pretrained_models/
+TwoStreamNetwork/results/
 
 # Ignore the builds
 causal-conv1d/build

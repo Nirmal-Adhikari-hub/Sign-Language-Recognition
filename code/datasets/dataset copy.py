@@ -93,7 +93,6 @@ class Phoenix2014Video(Dataset):
         self.videos, self.img_paths, self.glosses, self.n_frames = [], [], [], []
         for anno in annotations:
             self.videos.append(anno['name']) # 'fullFrame-210x260px/train/01April_2010_Thursday_heute_default-0/1/01April_2010_Thursday_heute', ...
-            print(f"ANNO ----------------------------------- {anno['gloss']} ----------------------------------------")
             gloss_ids = [self.gloss_to_id[word] for word in anno['gloss'].split()] # '__ON__ LIEB ZUSCHAUER ABEND WINTER GESTERN loc-NORD SCHOTTLAND loc-REGION UEBERSCHWEMMUNG AMERIKA IX', ...
             self.glosses.append(gloss_ids)
             self.n_frames.append(anno['num_frames']) # 176, ...
@@ -137,30 +136,15 @@ class Phoenix2014Video(Dataset):
         # frames = [self.read_img(path) for path in selected_frame_paths]
 
         # Load frames dynamically from zip
-        frames = [self.read_img(path) for path in selected_frame_paths] # ndarray List:[1(H,W,C), 2(H,W,C), ...T(H,W,C)]
-        print(f"FRAMESSSSSSSSSSSSSSSSSS SHAPE: {torch.tensor(frames).shape}")
+        frames = [self.read_img(path) for path in selected_frame_paths]
+        # print(f"FRAMESSSSSSSSSSSSSSSSSS SHAPE: {len(frames), frames[-1].shape}")
         # Apply transformations
         if self.mode == 'train' and self.aug:
-            
-            if self.args.n_samples > 1:
-                # Initialize lists for multiple samples
-                sampled_frames = []
-                sampled_labels = []
-                indices = []
+            # Initialize lists for multiple samples
+            sampled_frames = []
+            sampled_labels = []
 
-                for _ in range(self.args.n_samples):
-                    new_frames = self._aug_frame(frames)
-                    sampled_frames.append(new_frames)
-                    sampled_labels.append(gloss_ids)
-                    indices.append(idx)
-
-                return sampled_frames, torch.tensor(sampled_labels, dtype=torch.long), indices
-            else:
-                frames = self._aug_frame(frames)
-            return frames, torch.tensor(gloss_ids, dtype=torch.long), idx
-
-
-            # Generate original and augmented samples (for a valid n_samples, the first sample will be the original)
+            # Generate original and augmented samples
             for i in range(self.args.n_samples):
                 if i == 0:  # First sample is the original
                     sampled_frames.append(torch.tensor(frames).permute(3, 0, 1, 2))  # (T, H, W, C) -> (C, T, H, W)
@@ -172,13 +156,17 @@ class Phoenix2014Video(Dataset):
 
             # Return all samples and labels
             return sampled_frames, sampled_labels, idx
-
-        elif self.mode == 'validation':
+        else:
+            # print(f"NOT IN THE TRAINING PHASE TOOOOOOOOOOOOO !!")
+            frames = self.data_resize(frames)
             frames = self.data_transform(frames)
-            return frames, torch.tensor(gloss_ids, dtype=torch.long), idx
-        
-        elif self.mode == 'test':
-            frames = self.data_transform(self.data_resize(frames))
+
+            # Debug transformed frame shape
+            # print(f"FRAMES SHAPE AFTER TRANSFORM: {frames.shape}")
+
+            # # Convert frames to tensor
+            # frames_tensor = torch.stack(frames, dim=0) # Shape: (clip_len, C, H, W)
+            
             return frames, torch.tensor(gloss_ids, dtype=torch.long), idx
     
     def _aug_frame(self, buffer):
@@ -235,26 +223,26 @@ class Phoenix2014Video(Dataset):
 
 if __name__ == "__main__":
     from argparse import Namespace
-    # # Training mode test
-    # dataset_train = Phoenix2014Video(
-    #     anno_path="/nas/Dataset/Phoenix/phoenix-2014.train",
-    #     gloss_to_id_path="/nas/Dataset/Phoenix/gloss2ids.pkl",
-    #     video_path="/nas/Dataset/Phoenix/phoenix-2014-videos.zip",
-    #     mode="train",
-    #     clip_len=256,
-    #     target_size=(224, 224),
-    #     args=Namespace(n_samples=3, aa="rand-m9-mstd0.5-inc1", train_interpolation="bilinear", reprob=0.2)
-    # )
+    # Training mode test
+    dataset_train = Phoenix2014Video(
+        anno_path="/nas/Dataset/Phoenix/phoenix-2014.train",
+        gloss_to_id_path="/nas/Dataset/Phoenix/gloss2ids.pkl",
+        video_path="/nas/Dataset/Phoenix/phoenix-2014-videos.zip",
+        mode="train",
+        clip_len=256,
+        target_size=(224, 224),
+        args=Namespace(n_samples=3, aa="rand-m9-mstd0.5-inc1", train_interpolation="bilinear", reprob=0.2)
+    )
 
-    # sampled_frames, sampled_labels, idx = dataset_train[0]
-    # print(f"Training mode:")
-    # print(f"  Number of Samples: {len(sampled_frames)}")
-    # print(f"  Frame Shape (Original): {sampled_frames[0].shape}")
-    # print(f"  Frame Shape (Augmented): {sampled_frames[1].shape}")
+    sampled_frames, sampled_labels, idx = dataset_train[0]
+    print(f"Training mode:")
+    print(f"  Number of Samples: {len(sampled_frames)}")
+    print(f"  Frame Shape (Original): {sampled_frames[0].shape}")
+    print(f"  Frame Shape (Augmented): {sampled_frames[1].shape}")
 
-    # # Plot original and augmented frames
-    # plot_samples(sampled_frames, frame_idx=0, sample_idx=0)  # Original
-    # plot_samples(sampled_frames, frame_idx=0, sample_idx=1)  # Augmented
+    # Plot original and augmented frames
+    plot_samples(sampled_frames, frame_idx=0, sample_idx=0)  # Original
+    plot_samples(sampled_frames, frame_idx=0, sample_idx=1)  # Augmented
 
     # Validation mode test
     dataset_val = Phoenix2014Video(
