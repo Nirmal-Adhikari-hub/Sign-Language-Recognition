@@ -21,7 +21,7 @@ from utils import ZipReader
 class Phoenix2014Video(Dataset):
     def __init__(
             self, anno_path: str='', gloss_to_id_path: str='', video_path: str='', mode: str='train', clip_len: int=256,
-            aug_size: tuple=(256, 256), target_size: tuple=(224, 224), args=None
+            aug_size: tuple=(210, 210), target_size: tuple=(224, 224), args=None
         ):
         """
         Please Refer to TwostreamNetwork/origin/dataset
