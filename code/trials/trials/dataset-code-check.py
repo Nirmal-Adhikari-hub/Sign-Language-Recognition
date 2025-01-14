@@ -9,13 +9,12 @@ from torch.utils.data import Dataset
 from torchvision import transforms
 from PIL import Image
 import zipfile
-sys.path.insert(0, '/home/nirmal/sm/code')
-from random_erasing import RandomErasing
-from video_transforms import (
+from .random_erasing import RandomErasing
+from .video_transforms import (
     Compose, Resize, CenterCrop, Normalize,
     create_random_augment, random_resized_crop_with_shift, horizontal_flip,   
 )
-from volume_transforms import ClipToTensor
+from .volume_transforms import ClipToTensor
 from utils import ZipReader
 
 class Phoenix2014Video(Dataset):
@@ -96,10 +95,10 @@ class Phoenix2014Video(Dataset):
         all_frame_paths = [
             path for path in self.img_paths if video_name in path
         ]
-        # print(f"All frame paths: {all_frame_paths}")
+        print(f"All frame paths: {all_frame_paths}")
         
         selected_frame_paths = self._sample_frames(all_frame_paths, n_frames)
-        # print(f"Selected frame paths: {selected_frame_paths}")
+        print(f"Selected frame paths: {selected_frame_paths}")
 
         frames = [self.read_img(path) for path in selected_frame_paths] # ndarray List:[1(H,W,C), 2(H,W,C), ...T(H,W,C)]
         
@@ -347,57 +346,3 @@ def build_dataset(modal, gloss_tokenizer, is_train, is_test, args):
         raise NotImplementedError
     
     return dataset
-
-
-# if __name__ == "__main__":
-#     from argparse import Namespace
-#     # # Training mode test
-#     # dataset_train = Phoenix2014Video(
-#     #     anno_path="/nas/Dataset/Phoenix/phoenix-2014.train",
-#     #     gloss_to_id_path="/nas/Dataset/Phoenix/gloss2ids.pkl",
-#     #     video_path="/nas/Dataset/Phoenix/phoenix-2014-videos.zip",
-#     #     mode="train",
-#     #     clip_len=256,
-#     #     target_size=(224, 224),
-#     #     args=Namespace(n_samples=3, aa="rand-m9-mstd0.5-inc1", train_interpolation="bilinear", reprob=0.2)
-#     # )
-
-#     # sampled_frames, sampled_labels, idx = dataset_train[0]
-#     # print(f"Training mode:")
-#     # print(f"  Number of Samples: {len(sampled_frames)}")
-#     # print(f"  Frame Shape (Original): {sampled_frames[0].shape}")
-#     # print(f"  Frame Shape (Augmented): {sampled_frames[1].shape}")
-
-#     # # Plot original and augmented frames
-#     # plot_samples(sampled_frames, frame_idx=0, sample_idx=0)  # Original
-#     # plot_samples(sampled_frames, frame_idx=0, sample_idx=1)  # Augmented
-
-#     # Validation mode test
-#     dataset_val = Phoenix2014Video(
-#         anno_path="/nas/Dataset/Phoenix/phoenix-2014.dev",
-#         gloss_to_id_path="/nas/Dataset/Phoenix/gloss2ids.pkl",
-#         video_path="/nas/Dataset/Phoenix/phoenix-2014-videos.zip",
-#         mode="validation",
-#         clip_len=256,
-#         target_size=(224, 224)
-#     )
-
-#     frames, labels, idx = dataset_val[0]
-#     print(f"Validation mode:")
-#     print(f"  Frame Shape: {frames.shape}")
-#     plot_samples(frames, frame_idx=0, is_single=True)
-
-#     # Test mode test
-#     dataset_test = Phoenix2014Video(
-#         anno_path="/nas/Dataset/Phoenix/phoenix-2014.test",
-#         gloss_to_id_path="/nas/Dataset/Phoenix/gloss2ids.pkl",
-#         video_path="/nas/Dataset/Phoenix/phoenix-2014-videos.zip",
-#         mode="test",
-#         clip_len=256,
-#         target_size=(224, 224)
-#     )
-
-#     frames, labels, idx = dataset_test[0]
-#     print(f"Test mode:")
-#     print(f"  Frame Shape: {frames.shape}")
-#     plot_samples(frames, frame_idx=0, is_single=True)

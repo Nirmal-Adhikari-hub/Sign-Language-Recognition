@@ -17,8 +17,10 @@ from transformers import AutoTokenizer
 from timm.utils import ModelEma
 from optim_factory import get_parameter_groups, LayerDecayValueAssigner
 
+# from datasets.dataset import build_dataset
 from datasets.tokenizer import GlossTokenizer_S2G
 from engines.engine import train_one_epoch, validation_one_epoch, final_test
+# from videomamba import videomamba_base
 from utils import NativeScalerWithGradNormCount as NativeScaler
 from utils import collate_fn
 from model import build_model, load_pretrained_weights
@@ -148,9 +150,11 @@ def main(args, ds_init):
     torch.cuda.empty_cache()
 
     utils.init_distributed_mode(args)
+    # print("==========A============")
     # Deepspeed config.json  generation
     if ds_init != None:
         utils.create_ds_config(args)
+    # print("==========B============")
 
     print(args)
 
@@ -294,6 +298,41 @@ def main(args, ds_init):
             else:
                 new_dict[key] = checkpoint_model[key]
         checkpoint_model = new_dict
+        # for name in checkpoint_model.keys():
+        #     print(f"=======Key: {name}")
+        # print(f"_________________Shape of Pos Embed: {checkpoint_model['pos_embed'].shape}")
+
+        # interpolate position embedding
+        # if 'pos_embed' in checkpoint_model:
+        #     pos_embed_checkpoint = checkpoint_model['pos_embed']
+        #     embedding_size = pos_embed_checkpoint.shape[-1]  # channel dim
+        #     num_patches = model.patch_embed.num_patches  #
+        #     num_extra_tokens = model.pos_embed.shape[-2] - num_patches  # 0/1
+
+        #     # height (== width) for the checkpoint position embedding 
+        #     orig_size = int(((pos_embed_checkpoint.shape[-2] - num_extra_tokens) // (
+        #                 args.num_frames // model.patch_embed.tubelet_size)) ** 0.5)
+        #     # height (== width) for the new position embedding
+        #     new_size = int((num_patches // (args.num_frames // model.patch_embed.tubelet_size)) ** 0.5)
+        #     # class_token and dist_token are kept unchanged
+        #     if orig_size != new_size:
+        #         print("Position interpolate from %dx%d to %dx%d" % (orig_size, orig_size, new_size, new_size))
+        #         extra_tokens = pos_embed_checkpoint[:, :num_extra_tokens]
+        #         # only the position tokens are interpolated
+        #         pos_tokens = pos_embed_checkpoint[:, num_extra_tokens:]
+        #         # B, L, C -> BT, H, W, C -> BT, C, H, W
+        #         pos_tokens = pos_tokens.reshape(-1, args.num_frames // model.patch_embed.tubelet_size, orig_size,
+        #                                         orig_size, embedding_size)
+        #         pos_tokens = pos_tokens.reshape(-1, orig_size, orig_size, embedding_size).permute(0, 3, 1, 2)
+        #         pos_tokens = torch.nn.functional.interpolate(
+        #             pos_tokens, size=(new_size, new_size), mode='bicubic', align_corners=False)
+        #         # BT, C, H, W -> BT, H, W, C ->  B, T, H, W, C
+        #         pos_tokens = pos_tokens.permute(0, 2, 3, 1).reshape(-1,
+        #                                                             args.num_frames // model.patch_embed.tubelet_size,
+        #                                                             new_size, new_size, embedding_size)
+        #         pos_tokens = pos_tokens.flatten(1, 3)  # B, L, C
+        #         new_pos_embed = torch.cat((extra_tokens, pos_tokens), dim=1)
+        #         checkpoint_model['pos_embed'] = new_pos_embed
         
     utils.load_state_dict(model, checkpoint_model, prefix='')
     if hasattr(model, 'head') and isinstance(model.head, nn.Linear):
@@ -301,6 +340,15 @@ def main(args, ds_init):
         nn.init.xavier_uniform_(model.head.weight)
         nn.init.constant_(model.head.bias, 0)
 
+
+
+    # if args.use_pretrained:
+    #     if os.path.exists(args.pretrained_model_checkpoint_path):
+    #         model = load_pretrained_weights(model=model, 
+    #                                         checkpoint_path=args.pretrained_model_checkpoint_path, 
+    #                                         detach_head=True)
+    #     else:
+    #         raise ValueError(f"Checkpoint not found at {args.pretrained_model_checkpoint_path}")
 
     model.to(device)
     return model

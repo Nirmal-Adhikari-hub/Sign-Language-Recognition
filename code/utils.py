@@ -764,6 +764,61 @@ def multiple_samples_collate(batch, fold=False):
     return frames, texts, audios, labels, video_idx
 
 
+def collate_fn(batch, gloss_tokenizer):
+    """
+    Collate function to handle variable-sized frames and gloss_ids.
+    Args:
+        batch: List of tuples where each tuple contains (frames, gloss_ids, idx).
+               frames: Tensor of shape (C, T, H, W)
+               gloss_ids: Tensor of shape (N,)
+               idx: Index of the sample
+    Returns:
+        frames: Padded tensor of shape (B, C, T_max, H, W)
+        gloss_ids: Padded tensor of shape (B, N_max)
+        idx: List of indices
+    """
+    # Extract components
+    frames, origin_ts, gloss_ids, origin_gloss_lens, idx = zip(*batch)
+    
+    # Determine maximum T (time) and N (gloss_ids length) in the batch
+    max_t = max(f.shape[1] for f in frames)  # T dimension of frames
+    max_n = max(g.shape[0] for g in gloss_ids)  # Length of gloss_ids
+
+    # Padding frames
+    padded_frames = []
+    for f in frames:
+        c, t, h, w = f.shape
+        pad_t = max_t - t
+        pad_frame = torch.cat([f, f[:, -1:, :, :].repeat(1, pad_t, 1, 1)], dim=1)  # Repeat last frame
+        padded_frames.append(pad_frame)
+    padded_frames = torch.stack(padded_frames)  # Shape: (B, C, T_max, H, W)
+    # print(f"Padded frames shape: {padded_frames.shape}")
+    """
+    torch.Size([2, 3, 98, 224, 224])
+    """
+
+    # Padding gloss_ids
+    padded_gloss_ids = []
+    for g in gloss_ids:
+        pad_n = max_n - g.shape[0]
+        pad_gloss = torch.cat([g, torch.full((pad_n,), gloss_tokenizer.pad_id, dtype=g.dtype)], dim=0)  # Pad with silence_id
+        padded_gloss_ids.append(pad_gloss)
+    padded_gloss_ids = torch.stack(padded_gloss_ids)  # Shape: (B, N_max)
+    # print(f"Padded gloss ids: {padded_gloss_ids}")
+    """
+    tensor([
+        [  6,  16,  60, 417,   5,   1,   1,   1],
+        [ 47,   8,  24, 174,  72, 144,  11,  42]]
+    )
+    """
+    # print(f"Origin ts: {origin_ts}")
+    """
+    tensor([66, 98])
+    """
+    return padded_frames, torch.tensor(origin_ts), padded_gloss_ids, torch.tensor(origin_gloss_lens), list(idx)
+
+
+
 def multiple_pretrain_samples_collate(batch, fold=False):
     """
     Collate function for repeated augmentation. Each instance in the batch has
