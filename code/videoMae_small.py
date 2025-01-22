@@ -1,4 +1,5 @@
 from functools import partial
+import tensorflow as tf
 import numpy as np
 from typing import Tuple
 import torch
@@ -9,6 +10,28 @@ from timm.models.layers import drop_path, to_2tuple, trunc_normal_
 from timm.models.registry import register_model
 from dataclasses import dataclass
 from alphaction.modeling.poolers import make_3d_pooler
+from itertools import groupby
+
+
+def ctc_decode_func(tf_gloss_logits, input_lengths, beam_size):
+    ctc_decode, _ = tf.nn.ctc_beam_search_decoder(
+        inputs=tf_gloss_logits, 
+        sequence_length=input_lengths.cpu().detach().numpy(),
+        beam_width=beam_size,
+        top_paths=1,
+    )
+    ctc_decode = ctc_decode[0]
+    tmp_gloss_sequences = [[] for i in range(input_lengths.shape[0])]
+    for (value_idx, dense_idx) in enumerate(ctc_decode.indices):
+        tmp_gloss_sequences[dense_idx[0]].append(
+            ctc_decode.values[value_idx].numpy() + 1
+        )
+    decoded_gloss_sequences = []
+    for seq_idx in range(0, len(tmp_gloss_sequences)):
+        decoded_gloss_sequences.append(
+            [x[0] for x in groupby(tmp_gloss_sequences[seq_idx])]
+        )
+    return decoded_gloss_sequences
 
 
 def _cfg(url='', **kwargs):
@@ -276,21 +299,66 @@ class VisionTransformer(nn.Module):
         x = self.pos_drop(x)
 
         if self.use_checkpoint:
+            # print("Using gradient checkpointing.")
             for blk in self.blocks:
-                x = checkpoint.checkpoint(blk, x)
+                x = checkpoint.checkpoint(blk, x, use_reentrant=True)
         else:   
+            # print("Not using gradient checkpointing.")
             for blk in self.blocks:
                 x = blk(x)
 
         x = self.norm(x)  # [b thw=8x14x14 c=768]
         return x
 
-    def forward(self, x):
-        x = self.forward_features(x)
-        x = x.mean(dim=1, keepdim=False)  # [b num_classes] -> Global Pooling
-        print(f"Head input: {x.detach().cpu().numpy()}")
-        x = self.head(x)  # Global average pooling
-        return x
+    def forward(self, x, sgn_lengths):
+        x = self.forward_features(x) # The output of the model (B, THW, C)
+        # print(f" Before pooling and head Shape: {x.shape}")
+
+        B, patches_per_video, C = x.shape
+        T = patches_per_video // (self.grid_size[0] * self.grid_size[1]) # Recover frames count
+
+        # (B, T, patches_per_frame, C)
+        x = x.view(B,T,-1,C)
+
+        # Global average pooling the patches per frame
+        sgn = x.mean(dim=2)
+
+        sgn_mask_lst, valid_len_out_lst = [], []
+
+        # Calculate valid_len_out and mask
+        valid_len_out = torch.floor(sgn_lengths / self.patch_embed.tubelet_size).long() # B,
+        # print(f"======[DEBUG]===== valid_len_out: {valid_len_out}")
+        
+        sgn_mask = torch.zeros([B, 1, T], dtype=torch.bool, device=x.device)
+        for bi in range(B):
+            sgn_mask[bi, :, :valid_len_out[bi]] = True
+        sgn_mask_lst.append(sgn_mask)
+        valid_len_out_lst.append(valid_len_out)
+        # x = x.mean(dim=1, keepdim=False)  # [b num_classes] -> Global Pooling
+        # # print(f"Head input: {x.detach().cpu().numpy()}")
+        # x = self.head(x)  # Global average pooling
+        # print(f" After head Shape: {x.shape}")
+        # print(f"======[DEBUG]===== valid_len_out: {valid_len_out}, sgn_mask: {sgn_mask.shape}")
+        # Return outputs
+        return {
+            'sgn': sgn,  # Features (B, T, D)
+            'sgn_mask': sgn_mask_lst,  # Mask (B, 1, T)
+            'valid_len_out': valid_len_out_lst # Valid lengths (B,)
+        }
+    
+    def decode(self, gloss_logits, beam_size, input_lengths):
+        gloss_logits = gloss_logits.permute(1, 0, 2) #T,B,V
+        gloss_logits = gloss_logits.cpu().detach().numpy()
+        tf_gloss_logits = np.concatenate(
+            (gloss_logits[:, :, 1:], gloss_logits[:, :, 0, None]),
+            axis=-1,
+        )
+        decoded_gloss_sequences = ctc_decode_func(
+            tf_gloss_logits=tf_gloss_logits,
+            input_lengths=input_lengths,
+            beam_size=beam_size
+        )
+        return decoded_gloss_sequences
 
 
 @register_model

@@ -1,6 +1,7 @@
 import numpy as np
 from PIL import Image
 import torch
+from torch.utils.data import get_worker_info
 
 
 def convert_img(img):
@@ -66,7 +67,12 @@ class ClipToTensor(object):
                 tensor_clip = tensor_clip.float()
             if self.div_255:
                 tensor_clip = torch.div(tensor_clip, 255)
-            print(f"TENSOR CLIP {tensor_clip.shape}")
+
+            worker_info = get_worker_info()
+            if worker_info is not None:
+                worker_id = worker_info.id
+            if worker_id is not None and worker_id == 0:
+                print(f"[DEBUG] VOLUME_TRANSFORMS:TENSOR CLIP {tensor_clip.shape}")
             return tensor_clip
 
 

@@ -6,12 +6,13 @@ import torch
 import torchvision.transforms.functional as F
 from PIL import Image
 from torchvision import transforms
+from torch.utils.data import get_worker_info
 
 # from .rand_augment import rand_augment_transform
 # from .random_erasing import RandomErasing
 
-from rand_augment import rand_augment_transform
-from random_erasing import RandomErasing
+from .rand_augment import rand_augment_transform
+from .random_erasing import RandomErasing
 
 import numbers
 import PIL
@@ -992,7 +993,14 @@ class Resize(object):
     def __call__(self, clip):
         # Ensure all frames in the clip are NumPy arrays
         # clip = [np.array(frame) if isinstance(frame, Image.Image) else frame for frame in clip]
-        print(f"FROM VIDEO TRANSFORMS< CLIP IS RECEIVED AS: { clip[0].shape, len(clip)}")
+        # Example of rank-based logging
+        worker_info = get_worker_info()
+        if worker_info is not None:
+            worker_id = worker_info.id
+        if worker_id is not None and worker_id == 0:
+            print(f"[DEBUG] FROM VIDEO TRANSFORMS: Received Clip Shape: {clip[0].shape}, Length: {len(clip)}")
+
+        # print(f"FROM VIDEO TRANSFORMS< CLIP IS RECEIVED AS: { clip[0].shape, len(clip)}")
         resized = FF.resize_clip(
             clip, (self.size[1], self.size[0]), interpolation=self.interpolation)
         return resized

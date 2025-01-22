@@ -1,6 +1,61 @@
 import torch
 import torch.nn as nn
+from head import VisualHead
 from videoMae_small import vit_small_patch16_224
+
+
+class RGBModel(nn.Module):
+    def __init__(self, args):
+        super().__init__()
+        self.video_backbone = vit_small_patch16_224(
+                    num_classes=args.n_classes,            # Number of classes for the classification head
+                    all_frames=args.num_frames,  # Total number of frames
+                    # all_frames=args.n_frames * args.num_segments,  # Total number of frames
+                    tubelet_size=args.tubelet_size,         # Tubelet size
+                    drop_path_rate=args.drop_path_rate,          # Stochastic depth rate
+                    use_checkpoint=args.use_checkpoint,     # Gradient checkpointing
+                    use_mean_pooling=args.use_mean_pooling, # Use mean pooling or CLS token
+                    )
+        self.visual_head = VisualHead(
+                        cls_num=args.n_classes,
+                        input_size=args.embed_dim,
+                        hidden_size=512,
+                        ff_size=2048,
+                        pe=False,
+                        head_drop_rate=args.head_drop_rate,
+                        ff_kernelsize=3,
+                        pretrained_ckpt=None,
+                        is_empty=False,
+                        frozen=False,
+                        plus_conv_cfg={},
+                        ssl_projection_cfg={}
+        )
+
+    def forward(self, x, sgn_lenghts):
+        """
+        x: Input tensor of shape: (B, C, T, H, W)
+        sgn_lengths: Frame counts in each videos of a batch
+        """
+
+        # Backbone Output
+        backbone_out = self.video_backbone(x, sgn_lenghts)
+
+        # Extract features and valid lengths
+        # sgn = backbone_output['sgn'].permute(0, 2, 1)
+        sgn = backbone_out['sgn']
+        sgn_mask = backbone_out['sgn_mask'][-1]
+        valid_len_in = backbone_out['valid_len_out'][-1]
+
+        # Head processing
+        head_output = self.visual_head(sgn, sgn_mask, valid_len_in)
+
+        return {
+            'gloss_logits': head_output['gloss_logits'],
+            'gloss_probabilities_log': head_output['gloss_probabilities_log'],
+            'valid_len_out': head_output['valid_len_out']
+        }
+
+
 
 
 def build_model(args):
@@ -12,15 +67,7 @@ def build_model(args):
         model: An instance of the VideoMAE model.
     """
 
-    model = vit_small_patch16_224(
-    num_classes=args.n_classes,            # Number of classes for the classification head
-    all_frames=args.num_frames,  # Total number of frames
-    # all_frames=args.n_frames * args.num_segments,  # Total number of frames
-    tubelet_size=args.tubelet_size,         # Tubelet size
-    drop_path_rate=args.drop_path_rate,          # Stochastic depth rate
-    use_checkpoint=args.use_checkpoint,     # Gradient checkpointing
-    use_mean_pooling=args.use_mean_pooling, # Use mean pooling or CLS token
-    )
+    model = RGBModel(args)
 
     return model
 

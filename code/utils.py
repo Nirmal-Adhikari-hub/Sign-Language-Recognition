@@ -565,11 +565,11 @@ def save_model(args, epoch, model, model_without_ddp, optimizer, loss_scaler, mo
         tag_name = "checkpoint-%s" % model_name
         model.save_checkpoint(save_dir=local_save_dir, tag=tag_name, client_state=client_state)
 
-# 모델 학습을 재개하거나 평가할 때 저장된 checkpoint를 불러옴
+# Retrieve a saved checkpoint when resuming model training or evaluating it.
 def auto_load_model(args, model, model_without_ddp, optimizer, loss_scaler, model_ema=None):
     output_dir = Path(args.output_dir)
 
-    # deepspeed을 사용할 것이므로 필요하지 않음
+    # Not needed since we will be using deepspeed
     if loss_scaler is not None:
         # torch.amp
         if args.test_best and args.eval:
@@ -605,7 +605,7 @@ def auto_load_model(args, model, model_without_ddp, optimizer, loss_scaler, mode
     else:
         # deepspeed, only support '--auto_resume'.
         flag = False
-        # evaludation을 하는 것이고, 가장 좋은 결괏값을 뽑는 경우
+        # It is about evaluating and selecting the best result.
         if args.test_best and args.eval:
             try:
                 load_specific_model(model, model_ema, args, output_dir, model_name='best')
@@ -637,23 +637,23 @@ def auto_load_model(args, model, model_without_ddp, optimizer, loss_scaler, mode
             else:
                 print('No other models')
 
-# checkpoint 불러오기
+# Load checkpoint
 def load_specific_model(model, model_ema, args, output_dir, model_name):
     args.resume = os.path.join(output_dir, f'checkpoint-{model_name}')
     print(f"Auto resume the {model_name} checkpoint")
-    # DeepSpeedEngine.load_checkpoint -> load_path(load 경로), client_states(state dictionary)
-    _, client_states = model.load_checkpoint(args.output_dir, tag=f'checkpoint-{model_name}') # output_dir에서 checkpoint-{model_name} 가져오기
+    # DeepSpeedEngine.load_checkpoint -> load_path(load path), client_states(state dictionary)
+    _, client_states = model.load_checkpoint(args.output_dir, tag=f'checkpoint-{model_name}') # Import checkpoint-{model_name} from output_dir
     args.start_epoch = client_states['epoch'] + 1
     if model_ema is not None:
         if args.model_ema:
             _load_checkpoint_for_ema(model_ema, client_states['model_ema'])
 
 
-# Deepspeed을 사용하여 분산 학습을 설정하기 위한 구성 파일(config.json) 생성
+# Generate a configuration file (config.json) to set up distributed training using Deepspeed.
 def create_ds_config(args):
-    args.deepspeed_config = os.path.join(args.output_dir, "deepspeed_config.json") # 경로 설정
+    args.deepspeed_config = os.path.join(args.output_dir, "deepspeed_config.json")  # Set route
     with open(args.deepspeed_config, mode="w") as writer:
-        # AMP를 사용할 것이기 때문에 여기는 무시
+        # Ignore this since we will be using AMP
         if args.no_amp:
             ds_config = {
                 "train_batch_size": args.batch_size * args.update_freq * get_world_size(),
@@ -675,55 +675,60 @@ def create_ds_config(args):
                 }
             }
         else:
-            # json 파일 작성
+            # Create a json file
             ds_config = {
-                "train_batch_size": args.batch_size * args.update_freq * get_world_size(), # optimizer가 업데이트하는 배치 수
-                "train_micro_batch_size_per_gpu": args.batch_size, # optimizer가 업데이트하는 gpu당 배치 수
-                "steps_per_print": 1000, # 1000 스텝 마다 결과 출력
+                "train_batch_size": args.batch_size * args.update_freq * get_world_size(),  # Number of batches the optimizer updates
+                "train_micro_batch_size_per_gpu": args.batch_size,  # Number of batches per GPU updated by the optimizer
+                "steps_per_print": 1000,  # Output results every 1000 steps
                 "optimizer": {
-                    "type": "AdamW", # AdamW 사용
+                    "type": args.opt,
                     "params": {
-                        "lr": args.lr, # lr
-                        "weight_decay": args.weight_decay, # 가중치 감쇳값
-                        "bias_correction": True, # Adam 계열의 optimizer가 초기 학습 단계에서 편향이 발생할 수 있으므로 보정
-                        "betas": [
-                            0.9,
-                            0.999
-                        ],
-                        "eps": 1e-8 # 발산 방지
+                        "lr": args.lr,  # lr
+                        "weight_decay": args.weight_decay,  # Weighted cutoff value
+                        "bias_correction": True,  # Adam family optimizers can introduce bias in the early learning phase, so we need to compensate for this.
+                        "betas": args.opt_betas,
+                        "eps": args.opt_eps  # Preventing emission
                     }
                 },
                 # 추론 시
                 # "fp16": {
                 #     "enabled": not args.bf16,
-                #     "loss_scale": 0, # over, underflow 발생 시 자동으로 scaling 동적 조정
-                #     "initial_scale_power": 16, # 동적으로 조정할 때 scaling의 값을 2의 몇 제곱으로 할 것인지
-                #     "loss_scale_window": 500, # scaling 값에 대한 업데이트 주기
-                #     "hysteresis": 2, # 2번 이상의 underflow가 있을 때 scaling을 사용
-                #     "min_loss_scale": 1 # 최소 scaling 값
+                #     "loss_scale": 0,  # over, underflow 발생 시 자동으로 scaling 동적 조정
+                #     "initial_scale_power": 16,  # 동적으로 조정할 때 scaling의 값을 2의 몇 제곱으로 할 것인지
+                #     "loss_scale_window": 500,  # scaling 값에 대한 업데이트 주기
+                #     "hysteresis": 2,  # 2번 이상의 underflow가 있을 때 scaling을 사용
+                #     "min_loss_scale": 1  # 최소 scaling 값
                 # },
                 # bf16 사용
                 "bf16": {
                     "enabled": args.bf16
                 },
                 "zero_optimization": {
-                    "stage": 0,
-                    # "allgather_partitions": True,
-                    # "overlap_comm": True,
-                    # "reduce_scatter": True,
-                    # "contiguous_gradients": True,
-                    # "allgather_bucket_size": 5e8,
-                    # "reduce_bucket_size": 5e8,
-                    # 'round_robin_gradients': True,
-                    # "offload_optimizer": {
-                    #     "device": "cpu",
-                    #     "pin_memory": True,
-                    #     "fast_init": True,
-                    # },
-                    # "offload_param": {
-                    #     "device": "cpu",
-                    #     "pin_memory": True
-                    # },
+                    "stage": args.zero_stage,  # Add this field
+                    "allgather_partitions": True if args.zero_stage > 1 else False,
+                    "reduce_scatter": True if args.zero_stage > 1 else False,
+                    "contiguous_gradients": True if args.zero_stage > 1 else False,
+                    "overlap_comm": True if args.zero_stage > 1 else False,
+                    "offload_param": {
+                        # "device": "nvme",  # Changed to NVMe for Stage 3
+                        "device": "cpu",  # Changed to NVMe for Stage 3
+                        # "nvme_path": "/home",  # Use NVMe device mounted on /home
+                        # "buffer_size": 200000000,  # Set buffer size to 200 MB for param offloading
+                        "pin_memory": True # Pin memory for param offloading
+                    } if args.zero_stage == 3 else None,
+                    "offload_optimizer": {
+                        # "device": "nvme",  # Changed to NVMe for optimizer offloading
+                        "device": "cpu",  # Changed to NVMe for optimizer offloading
+                        # "nvme_path": "/home",  # Use NVMe device mounted on /home
+                        "pin_memory": True,  # Pin memory for optimizer offloading
+                        # "buffer_size": 100000000  # Set buffer size to 100 MB for optimizer offloading
+                        # "pipeline_read": False,
+                        # "pipeline_write": False,
+                    } if args.zero_stage == 3 else None,
+                    # Added parameter for efficiency with Stage 3
+                    "prefetch_bucket_size": 50000000,  # 50 MB prefetch size for parameters
+                    "reduce_bucket_size": 2000000,  # Smaller bucket size to reduce memory pressure
+                    # "gradient_predivide_factor": 1.0  # Gradient predivide factor for communication
                     # "stage3_max_live_parameters" : 6e7,
                     # "stage3_max_reuse_distance" : 6e7,
                     # "stage3_prefetch_bucket_size" : 6e7,
@@ -732,36 +737,10 @@ def create_ds_config(args):
                     # "elastic_checkpoint": True,
                 }
             }
-        # 들여쓰기를 2칸으로 하여 dictionary를 json으로 바꾸고 작성
+        # Convert dictionary to json and write with 2 spaces indentation
         writer.write(json.dumps(ds_config, indent=2))
+        return ds_config
 
-
-def multiple_samples_collate(batch, fold=False):
-    """
-    Collate function for repeated augmentation. Each instance in the batch has
-    more than one sample.
-    Args:
-        batch (tuple or list): data batch to collate.
-    Returns:
-        (tuple): collated data batch.
-    """
-    frames, texts, audios, labels, video_idx = zip(*batch)
-    
-    frames = [item for sublist in frames for item in sublist] # [B * N * tensor(C, T, H, W)]
-    texts = [item for sublist in texts for item in sublist]
-    audios = [item for sublist in audios for item in sublist]
-    labels = [item for sublist in labels for item in sublist] # [B * N * tensor(n_classes)]
-    video_idx = [item for sublist in video_idx for item in sublist] # [B * N * tensor(1)]
-
-    # tensor로 변환
-    frames, texts, audios, labels, video_idx = (
-        default_collate(frames),
-        default_collate(texts),
-        default_collate(audios),
-        default_collate(labels),
-        default_collate(video_idx),
-    )
-    return frames, texts, audios, labels, video_idx
 
 
 def collate_fn(batch, gloss_tokenizer):
@@ -777,6 +756,7 @@ def collate_fn(batch, gloss_tokenizer):
         gloss_ids: Padded tensor of shape (B, N_max)
         idx: List of indices
     """
+
     # Extract components
     frames, origin_ts, gloss_ids, origin_gloss_lens, idx = zip(*batch)
     
@@ -817,29 +797,6 @@ def collate_fn(batch, gloss_tokenizer):
     """
     return padded_frames, torch.tensor(origin_ts), padded_gloss_ids, torch.tensor(origin_gloss_lens), list(idx)
 
-
-
-def multiple_pretrain_samples_collate(batch, fold=False):
-    """
-    Collate function for repeated augmentation. Each instance in the batch has
-    more than one sample.
-    Args:
-        batch (tuple or list): data batch to collate.
-    Returns:
-        (tuple): collated data batch.
-    """
-    process_data, mask = zip(*batch)
-    process_data = [item for sublist in process_data for item in sublist]
-    mask = [item for sublist in mask for item in sublist]
-    process_data, mask = (
-        default_collate(process_data),
-        default_collate(mask),
-    )
-    if fold:
-        return [process_data], mask
-    else:
-        return process_data, mask
-    
 # --------------------------------------------------------
 # SoCo
 # Copyright (c) 2021 Microsoft
