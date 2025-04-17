@@ -378,6 +378,8 @@ def main(args, ds_init):
             lr_schedule_values, wd_schedule_values, n_training_steps_per_epoch, args.update_freq,
             no_amp=args.no_amp, bf16=args.bf16, gloss_tokenizer=gloss_tokenizer
         )
+        
+        break
 
         if log_writer is not None:
             log_writer.update(train_avg_loss=train_stats['loss'], head='loss', step=epoch)

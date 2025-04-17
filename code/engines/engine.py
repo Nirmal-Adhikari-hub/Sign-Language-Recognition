@@ -159,6 +159,9 @@ def train_one_epoch(
 
         data = data.bfloat16() if bf16 else data
         # loss_dict, total_outputs = train_class_batch(model, frames, scripts, audios, targets, criterions)
+
+        # print(f"=============================Model type: {type(model)}, data: {data.shape}, data_iter_Step: {data_iter_step}, name: {name}")  # Should be DeepSpeedEngine
+
         loss, outputs = train_class_batch(model, data, input_lengths, targets, target_lengths, criterion)
 
         # print(f"Outputs shape: {outputs.shape}")
@@ -166,6 +169,12 @@ def train_one_epoch(
         decoded_gloss_ids = model.video_backbone.decode(
             gloss_logits=outputs['gloss_logits'], beam_size=1, input_lengths=outputs['valid_len_out']
         )
+
+        # print(f"===============================Decoded gloss ids: {decoded_gloss_ids}")
+        # print(f"gloss_logits grad_fn: {outputs['gloss_logits'].grad_fn}")
+        # print(f"gloss_probabilities_log grad_fn: {outputs['gloss_probabilities_log'].grad_fn}")
+        # print(f"===============================Incorrect Decoded gloss ids: {incorrect_decoded_gloss_ids}")
+
         decoded_glosses = [
             clean_phoenix_2014(" ".join(gloss_tokenizer.convert_ids_to_tokens(decoded_gloss_id)))
             for decoded_gloss_id in decoded_gloss_ids
@@ -179,8 +188,10 @@ def train_one_epoch(
         
         loss_value = loss.item()
 
+        # print(f"===================================Loss, loss.requires_grad: {loss_value}")
+
         loss_list = [torch.zeros_like(loss) for _ in range(dist.get_world_size())]
-        dist.all_gather(loss_list, loss) # loss을 loss_list에 복사
+        dist.all_gather(loss_list, loss) # Copy loss to loss_list
         loss_list = torch.tensor(loss_list).clone().detach()
 
         loss_list_isnan = torch.isnan(loss_list).any()
@@ -229,9 +240,94 @@ def train_one_epoch(
         #                 model_ema.update(model)
         #         loss_scale_value = 0
 
+        # ====================================START========================================
+        # if hasattr(model, "parameters") and hasattr(model, "config"):
+        #     print(f"✅ Deepspeed is active! Model config: {model.config}")
+        # else:
+        #     print(f"❌ Deepspeed is NOT active!")
+        # print(f"+++++++++++ BEFORE LOSS BACKWARD +++++++++++")
+        # for name, param in model.named_parameters():
+        #     if param.grad is not None:
+        #         print(f"✅ BEFORE BACKWARD: Gradient exists for {name}")
+
+        # Check if gradients exist
+        # for name, param in model.named_parameters():
+        #     if not param.requires_grad:
+        #         print(f"🚨 WARNING: {name} is FROZEN and will NOT update!")
+        #     if param.grad is None:
+        #         print(f"🚨 WARNING: {name} STILL has NO gradient after loss.backward()!")
+        #     else:
+        #         print(f"✅ Gradient computed for {name}")
+
+        # --- DEBUG: Check the loss and output gradient connection ---
+        # print("DEBUG: Loss grad_fn:", loss.grad_fn)
+
+        # If the model output dictionary contains 'gloss_logits', register a hook to print its gradient norm.
+        # if 'gloss_logits' in outputs:
+        #     outputs['gloss_logits'].register_hook(lambda grad: print("DEBUG: gloss_logits grad norm:", grad.norm()))
+
+        # --- End of debug code ---
+        # ====================================END========================================
+
         loss /= update_freq
+        # if hasattr(model, "backward"):
+        #     print("✅ DeepSpeed `model.backward()` exists, calling it...")
+        #     model.backward(loss)
+        #     # model.backward(loss)
+        # else:
+        #     print("❌ DeepSpeed `model.backward()` does NOT exist, calling `loss.backward()` directly...")
+        # loss.backward(retain_graph=True)
+
         model.backward(loss)
+        # =========================================STATR===================================
+
+        # --- DeepSpeed Underlying Model Gradients Diagnostics ---
+        # try:
+        #     print("DEBUG: Checking underlying model parameter gradients via model.module.named_parameters()")
+        #     for name, param in model.module.named_parameters():
+        #         if param.requires_grad:
+        #             grad_norm = param.grad.norm() if param.grad is not None else None
+        #             print(f"  {name}: grad norm = {grad_norm}")
+        # except Exception as e:
+        #     print("DEBUG: Could not retrieve gradients from model.module:", e)
+        # --- End Diagnostics ---
+        # --- End DeepSpeed Gradient Diagnostics ---
+
+        # print(f"_________________________________________Loss shape: {loss} | Loss requires_grad: {loss.requires_grad}")
+        # print(f"Loss value: {loss.item()}, requires_grad: {loss.requires_grad}")
+        # print(f"Loss dtype: {loss.dtype}, Loss shape: {loss.shape}")
+        # print(f"Loss computation graph: {loss.grad_fn}")  # This should NOT be None
+
+
+        # for param_group in optimizer.param_groups:
+        #     print(f"Before Step - LR: {param_group['lr']} | Weight Decay: {param_group['weight_decay']}")
+        # ===========================================ENMD=================================
+
         model.step()
+
+        #=====================================STAERT=======================================
+        # print(f"+++++++++++ AFTER LOSS BACKWARD FROM OPTIMIZER +++++++++++")
+        # for group in optimizer.param_groups:
+        #     for param in group['params']:
+        #         if param.grad is None:
+        #             param_name = [name for name, p in model.named_parameters() if p is param]
+        #             print(f"🚨 Optimizer Warning: Parameter {param_name} has NO gradient!")
+        #         else:
+        #             param_name = [name for name, p in model.named_parameters() if p is param]
+        #             print(f"✅ Optimizer has gradient for parameter {param_name}")
+
+            # print(f"After Step - LR: {param_group['lr']} | Weight Decay: {param_group['weight_decay']}")
+
+
+        # Check if gradients exist
+        # print(f"+++++++++++ AFTER LOSS BACKWARD +++++++++++")
+        # for name, param in model.named_parameters():
+        #     print(f"Layer: {name}, requires_grad: {param.requires_grad}")
+        #     if param.grad is None:
+        #         print(f"🚨 WARNING: {name} STILL has NO gradient after loss.backward()! {param.shape}")
+        #     else:
+        #         print(f"✅ Gradient computed for {name}")
+        # =======================================END=====================================
 
         if (data_iter_step + 1) % update_freq == 0:
             # model.zero_grad()
@@ -264,8 +360,8 @@ def train_one_epoch(
         min_lr = 10.
         max_lr = 0.
         for group in optimizer.param_groups:
-            min_lr = min(min_lr, group["lr"]) # Layer decay 값이 적용된 lr들 중 최솟값과 현재 lr의 곱
-            max_lr = max(max_lr, group["lr"]) # Layer decay 값이 적용된 lr들 중 최댓값(1)과 현재 lr의 곱
+            min_lr = min(min_lr, group["lr"]) # The product of the minimum value among the LRs with the layer decay value applied and the current LR
+            max_lr = max(max_lr, group["lr"]) # The product of the maximum value (1) among the LRs to which the layer decay value is applied and the current LR
         metric_logger.update(lr=max_lr)
         metric_logger.update(min_lr=min_lr)
 
@@ -288,6 +384,7 @@ def train_one_epoch(
 
             # step + 1
             log_writer.set_step()
+        # break
 
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()

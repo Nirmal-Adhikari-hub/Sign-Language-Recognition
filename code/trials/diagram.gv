@@ -1,0 +1,25 @@
+// Absolute vs. Relative Coordinates
+digraph {
+	Kij [label="Absolute Coordinates
+(K_ij)"]
+	Q [label="Quantization
+(Delta-based Encoding)"]
+	Rij [label="Relative Coordinates
+(Relative(K_ij))"]
+	M1 [label="Model_1
+(Trained on Absolute)"]
+	A1 [label=Accuracy_1]
+	M2 [label="Model_2
+(Trained on Relative)"]
+	A2 [label=Accuracy_2]
+	M3 [label="Model_3
+(Combined Approach)"]
+	Kij -> M1 [label=Train]
+	M1 -> A1 [label=Evaluate]
+	Kij -> Q [label="Delta-based"]
+	Q -> Rij [label="Generate Relative"]
+	Rij -> M2 [label=Train]
+	M2 -> A2 [label=Evaluate]
+	M1 -> M3 [label=Combine]
+	M2 -> M3 [label=Combine]
+}

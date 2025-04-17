@@ -229,6 +229,16 @@ def train_one_epoch(
         model.backward(loss)
         model.step()
 
+        # Check if gradients exist
+        print(f"+++++++++++ AFTER LOSS BACKWARD +++++++++++")
+        for name, param in model.named_parameters():
+            if not param.requires_grad:
+                print(f"🚨 WARNING: {name} is FROZEN and will NOT update!")
+            if param.grad is None:
+                print(f"🚨 WARNING: {name} STILL has NO gradient after loss.backward()! {param.shape}")
+            else:
+                print(f"✅ Gradient computed for {name}")
+
         if (data_iter_step + 1) % update_freq == 0:
             # model.zero_grad()
             # Deepspeed will call step() & model.zero_grad() automatic
@@ -284,6 +294,7 @@ def train_one_epoch(
 
             # step + 1
             log_writer.set_step()
+        break
 
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()

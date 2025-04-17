@@ -3,7 +3,7 @@
   "train_micro_batch_size_per_gpu": 1,
   "steps_per_print": 1000,
   "optimizer": {
-    "type": "AdamW",
+    "type": "adamw",
     "params": {
       "lr": 0.001,
       "weight_decay": 0.05,
@@ -19,6 +19,14 @@
     "enabled": false
   },
   "zero_optimization": {
-    "stage": 0
+    "stage": 0,
+    "allgather_partitions": false,
+    "reduce_scatter": false,
+    "contiguous_gradients": false,
+    "overlap_comm": false,
+    "offload_param": null,
+    "offload_optimizer": null,
+    "prefetch_bucket_size": 50000000,
+    "reduce_bucket_size": 2000000
   }
 }

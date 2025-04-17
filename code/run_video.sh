@@ -8,17 +8,19 @@ task=s2g
 modal=video
 dataset=phoenix-2014
 batch_size=1
-epochs=50
+epochs=150
 warmup_epochs=5
-update_freq=16
-lr=1e-3
+update_freq=32
+lr=5e-4
 min_lr=1e-6
 warmup_lr=1e-6
 T_0=50
 T_mul=1
 lr_gamma=0.5
-num_frames=256
+num_frames=128
 classes=1235
+embed_dim=192
+logfile_dir="/nas/Nirmal/workspace/slr_results/videomae_${embed_dim}_embed_dim"
 
 torchrun --nproc_per_node="$N_GPUS" --master_port="$MASTER_PORT" run.py \
         --task "$task" \
@@ -30,15 +32,16 @@ torchrun --nproc_per_node="$N_GPUS" --master_port="$MASTER_PORT" run.py \
         --pretrained \
         --patch_size 16 16 \
         --in_chans 3 \
-        --embed_dim 384 \
+        --embed_dim "$embed_dim" \
         --depth 12 \
-        --drop_rate 0.1 \
-        --drop_path_rate 0.1 \
-        --head_drop_rate 0.1 \
+        --drop_rate 0.5 \
+        --drop_path_rate 0.5 \
+        --attn_drop_rate 0.5 \
+        --head_drop_rate 0.5 \
         --model_ema \
         --opt "adamw" \
         --opt_betas 0.9 0.999 \
-        --weight_decay 0.001 \
+        --weight_decay 0.05 \
         --lr "$lr" \
         --min_lr "$min_lr" \
         --warmup_lr "$warmup_lr" \
@@ -56,11 +59,13 @@ torchrun --nproc_per_node="$N_GPUS" --master_port="$MASTER_PORT" run.py \
         --split "," \
         --n_classes $classes \
         --num_frames "$num_frames" \
-        --output_dir "/nas/Nirmal/workspace/slr_results/videomae" \
-        --log_dir "/nas/Nirmal/workspace/slr_results/videomae" \
-        --resume "/nas/Nirmal/workspace/slr_results/videomae" \
+        --output_dir "/nas/Nirmal/workspace/slr_results/3videomae_${embed_dim}_embed_dim_${num_frames}_num_frames_${batch_size}" \
+        --log_dir "/nas/Nirmal/workspace/slr_results/3videomae_${embed_dim}_embed_dim_${num_frames}_num_frames_${batch_size}" \
+        --resume "/nas/Nirmal/workspace/slr_results/3videomae_${embed_dim}_embed_dim_${num_frames}_num_frames_${batch_size}" \
         --dataset "$dataset" \
-        --auto_resume \
         --save_ckpt \
         --num_workers 12 \
         --distributed \
+        --auto_resume \
+        --use_checkpoint \
+        # | tee "$logfile_dir"/videomae_"$embed_dim"_embed_dim.log\

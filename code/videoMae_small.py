@@ -252,16 +252,16 @@ class VisionTransformer(nn.Module):
         self.norm = norm_layer(embed_dim)  
         self.fc_norm = None
 
-        self.head = nn.Linear(embed_dim, num_classes) if num_classes > 0 else nn.Identity()
+        # self.head = nn.Linear(embed_dim, num_classes) if num_classes > 0 else nn.Identity()
 
         if use_learnable_pos_emb:
             trunc_normal_(self.pos_embed, std=.02)
 
-        trunc_normal_(self.head.weight, std=.02)
-        self.apply(self._init_weights)
+        # trunc_normal_(self.head.weight, std=.02)
+        # self.apply(self._init_weights)
 
-        self.head.weight.data.mul_(init_scale)
-        self.head.bias.data.mul_(init_scale)
+        # self.head.weight.data.mul_(init_scale)
+        # self.head.bias.data.mul_(init_scale)
 
     def _init_weights(self, m):
         if isinstance(m, nn.Linear):
@@ -279,19 +279,22 @@ class VisionTransformer(nn.Module):
     def no_weight_decay(self):
         return {'pos_embed', 'cls_token'}
 
-    def get_classifier(self):
-        return self.head
+    # def get_classifier(self):
+    #     return self.head
 
-    def reset_classifier(self, num_classes, global_pool=''):
-        self.num_classes = num_classes
-        self.head = nn.Linear(self.embed_dim, num_classes) if num_classes > 0 else nn.Identity()
+    # def reset_classifier(self, num_classes, global_pool=''):
+    #     self.num_classes = num_classes
+    #     self.head = nn.Linear(self.embed_dim, num_classes) if num_classes > 0 else nn.Identity()
 
     def forward_features(self, x):
         x = self.patch_embed(x)
+        # print(f"Shape after patch embedding: {x.shape}")
         B, width, t, h, w = x.size()
         x = x.flatten(2).transpose(1, 2)
+        # print(f"Shape after flatten and transpose: {x.shape}")
 
         if self.pos_embed is not None:  
+            # print(f"Position Embedding Shape: {self.pos_embed.shape}")
             pos_embed = self.pos_embed.reshape(t, -1, width)
             pos_embed = interpolate_pos_embed_online(
                 pos_embed, self.grid_size, [h, w], 0).reshape(1, -1, width)
@@ -305,6 +308,7 @@ class VisionTransformer(nn.Module):
         else:   
             # print("Not using gradient checkpointing.")
             for blk in self.blocks:
+                # print(f"[DEBUG]: Input shape: {x.shape}")
                 x = blk(x)
 
         x = self.norm(x)  # [b thw=8x14x14 c=768]
@@ -340,6 +344,7 @@ class VisionTransformer(nn.Module):
         # print(f" After head Shape: {x.shape}")
         # print(f"======[DEBUG]===== valid_len_out: {valid_len_out}, sgn_mask: {sgn_mask.shape}")
         # Return outputs
+        # print(f"====================Processed Frames (T) in forward: {T}")  # Number of frames
         return {
             'sgn': sgn,  # Features (B, T, D)
             'sgn_mask': sgn_mask_lst,  # Mask (B, 1, T)
@@ -364,7 +369,7 @@ class VisionTransformer(nn.Module):
 @register_model
 def vit_small_patch16_224(pretrained=False, **kwargs):
     model = VisionTransformer(
-        patch_size=16, embed_dim=384, depth=12, num_heads=6, mlp_ratio=4, qkv_bias=True,
+        patch_size=16, depth=12, num_heads=6, mlp_ratio=4, qkv_bias=True,
         norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
     model.default_cfg = _cfg()
     return model
@@ -379,12 +384,124 @@ def interpolate_pos_embed_online(
     extra_tokens = pos_embed[:, :num_extra_tokens]
     pos_tokens = pos_embed[:, num_extra_tokens:]
     embedding_size = pos_tokens.shape[-1]
+    # print(f"Position Embedding Shape Before: {pos_tokens.shape}, {extra_tokens.shape}, {embedding_size}") 
     pos_tokens = pos_tokens.reshape(
         -1, orig_size[0], orig_size[1], embedding_size
     ).permute(0, 3, 1, 2)
+    # print(f"Position Embedding Shape: {pos_tokens.shape}")
     pos_tokens = torch.nn.functional.interpolate(
         pos_tokens, size=new_size, mode="bicubic", align_corners=False,
     )
+    # print(f"Interpolated Position Embedding Shape: {pos_tokens.shape}")
     pos_tokens = pos_tokens.permute(0, 2, 3, 1).flatten(1, 2)
+    # print(f"Flattened Position Embedding Shape: {pos_tokens.shape}")
+    # print(f"Extra Tokens Shape: {extra_tokens.shape}")
     new_pos_embed = torch.cat((extra_tokens, pos_tokens), dim=1)
     return new_pos_embed
+
+
+if __name__ == '__main__':
+    from run import get_args
+    import utils
+    from collections import OrderedDict
+
+
+    args, _ = get_args()
+    model = vit_small_patch16_224(
+                    num_classes=args.n_classes,            # Number of classes for the classification head
+                    all_frames=args.num_frames,  # Total number of frames
+                    # all_frames=args.n_frames * args.num_segments,  # Total number of frames
+                    tubelet_size=args.tubelet_size,         # Tubelet size
+                    drop_path_rate=args.drop_path_rate,          # Stochastic depth rate
+                    use_checkpoint=args.use_checkpoint,     # Gradient checkpointing
+                    use_mean_pooling=args.use_mean_pooling, # Use mean pooling or CLS token
+    )
+    # B, C, T, H, W
+    # print(f"Output Shape: {model(torch.randn(2, 3, 128, 224, 224), 128).shape}")
+
+    if args.pretrained_model_checkpoint_path:
+        if args.pretrained_model_checkpoint_path.startswith('https'):
+            checkpoint = torch.hub.load_state_dict_from_url(
+                args.pretrained_model_checkpoint_path, map_location='cpu', check_hash=True)
+        else:
+            checkpoint = torch.load(args.pretrained_model_checkpoint_path, map_location='cpu')
+
+        print("Load ckpt from %s" % args.pretrained_model_checkpoint_path)
+        checkpoint_model = None
+        for model_key in args.model_key.split('|'):
+            if model_key in checkpoint:
+                checkpoint_model = checkpoint[model_key]
+                print("Load state_dict by model_key = %s" % model_key)
+                break
+        if checkpoint_model is None:
+            checkpoint_model = checkpoint
+        state_dict = model.state_dict()
+        for k in ['head.weight', 'head.bias']:  #
+            if k in checkpoint_model and checkpoint_model[k].shape != state_dict[k].shape:
+                print(f"Removing key {k} from pretrained checkpoint")
+                del checkpoint_model[k]
+
+        all_keys = list(checkpoint_model.keys())
+        new_dict = OrderedDict()
+        for key in all_keys:
+            if key.startswith('backbone.'):
+                new_dict[key[9:]] = checkpoint_model[key]
+            elif key.startswith('encoder.'):
+                new_dict[key[8:]] = checkpoint_model[key]
+            else:
+                new_dict[key] = checkpoint_model[key]
+        checkpoint_model = new_dict
+
+        # for keys, param in checkpoint_model.items():
+        #     print(keys, param.shape)
+
+
+        # print(f"checkpoint_model: {checkpoint_model}")
+        
+    # utils.load_state_dict(model.video_backbone, checkpoint_model, prefix='')
+    if hasattr(model, 'head') and isinstance(model.head, nn.Linear):
+        print("Initializing the classification head weights.")
+        nn.init.xavier_uniform_(model.head.weight)
+        nn.init.constant_(model.head.bias, 0)
+
+
+
+    # # Check if the pretrained checkpoint model has the necessary attributes
+    # print("\n==== Pretrained Model Configuration ====")
+
+    # # Check the embedding dimension
+    # if "patch_embed.proj.weight" in checkpoint_model:
+    #     embed_dim = checkpoint_model["patch_embed.proj.weight"].shape[0]  # First dim = embedding size
+    #     print(f"Embedding Dimension: {embed_dim}")
+
+    # # Check the number of attention heads (using block 0 as reference)
+    # for key in checkpoint_model.keys():
+    #     if ".attn.qkv.weight" in key:  
+    #         attn_dim = checkpoint_model[key].shape[0]  # This should be `num_heads * head_dim * 3`
+    #         num_heads = attn_dim // 3 // embed_dim  # Divide by 3 for q, k, v, and head_dim
+    #         print(f"Number of Attention Heads: {num_heads}")
+    #         break  # We only need to check this once
+
+    # # Dropout rates (not always stored explicitly in checkpoint, may need default assumption)
+    # drop_rate = 0.1  # Default, unless explicitly stored
+    # drop_path_rate = 0.1  # Default, but can be searched for
+    # if "blocks.0.attn.proj.weight" in checkpoint_model:
+    #     print(f"Drop Rate: {drop_rate} (Check model definition for exact value)")
+    #     print(f"Drop Path Rate: {drop_path_rate} (Check model definition for exact value)")
+
+    # # MLP ratio (determined from shape of MLP layers)
+    # for key in checkpoint_model.keys():
+    #     if ".mlp.fc1.weight" in key:  
+    #         mlp_ratio = checkpoint_model[key].shape[0] // embed_dim  # fc1 has shape (hidden_dim, embed_dim)
+    #         print(f"MLP Ratio: {mlp_ratio}")
+    #         break
+
+    # # Number of Transformer blocks (depth of the model)
+    # num_blocks = sum(1 for key in checkpoint_model if "blocks." in key and ".attn.qkv.weight" in key)
+    # print(f"Number of Transformer Blocks (Depth): {num_blocks}")
+
+    # # Normalization layers
+    # if "norm.weight" in checkpoint_model:
+    #     print("Layer Normalization Applied Before Final Projection")
+
+    # print("========================================\n")

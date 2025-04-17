@@ -21,7 +21,16 @@ class VisualHead(torch.nn.Module):
                 self.fc1 = nn.Identity()
             else:
                 self.fc1 = torch.nn.Linear(input_size, self.hidden_size)
+            
+            
+            
+            
             self.bn1 = MaskedNorm(num_features=self.hidden_size, norm_type='sync_batch')
+            # self.bn1 = nn.SyncBatchNorm(num_features=self.hidden_size)
+
+
+
+            
             self.relu1 = torch.nn.ReLU()
             self.dropout1 = torch.nn.Dropout(p=head_drop_rate)
 
@@ -79,6 +88,13 @@ class VisualHead(torch.nn.Module):
                 #projection 1
                 x = self.fc1(x)
                 x = self.bn1(x, mask)
+
+                # Suppose x has shape [B, T, hidden_size]:
+                # x = x.transpose(1, 2)  # now [B, hidden_size, T]
+                # x = self.bn1(x)        # standard SyncBatchNorm call
+                # x = x.transpose(1, 2)  # back to [B, T, hidden_size]
+
+
                 x = self.relu1(x)
                 #pe
                 x = self.pe(x)
@@ -230,6 +246,10 @@ class MaskedNorm(nn.Module):
             selected = torch.masked_select(reshaped, reshaped_mask).reshape(
                 [-1, self.num_features]
             )
+
+            # print("MaskedNorm: selected elements =", selected.numel())
+
+
             batch_normed = self.norm(selected)
             scattered = reshaped.masked_scatter(reshaped_mask, batch_normed)
             return scattered.reshape([x.shape[0], -1, self.num_features])
@@ -279,3 +299,32 @@ class PositionalEncoding(nn.Module):
         """
         # Add position encodings
         return emb + self.pe[:, : emb.size(1)]
+    
+
+
+if __name__ == '__main__':
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    # Create a dummy VisualHead instance
+    cls_num = 1235
+    input_size = 768
+    hidden_size = 512
+    head = VisualHead(cls_num, input_size=input_size, hidden_size=hidden_size, ff_size=2048, pe=False, head_drop_rate=0.1)
+    head.to(device)
+
+    # Create dummy input: assume batch size 2, T=32, and feature dimension 768
+    dummy_x = torch.randn(2, 32, input_size, requires_grad=True).to(device)
+    # Create a dummy mask of ones (or you can experiment with a realistic mask)
+    dummy_mask = torch.ones(2, 1, 32, dtype=torch.bool).to(device)
+    # Create a dummy valid length tensor
+    valid_len = torch.tensor([32, 32]).to(device)
+
+    # Forward pass through the head
+    out = head(dummy_x, dummy_mask, valid_len)
+    # Use gloss_logits to compute a simple scalar loss
+    loss = out['gloss_logits'].sum()
+    loss.backward()
+
+    # Check a few parameters for gradients:
+    for name, param in head.named_parameters():
+        if param.requires_grad:
+            print(f"{name}: grad norm = {param.grad.norm() if param.grad is not None else 'None'}")

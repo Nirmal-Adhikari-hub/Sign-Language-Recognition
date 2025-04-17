@@ -20,19 +20,19 @@ from tensorboardX import SummaryWriter
 
 class SmoothedValue(object):
     """
-    값을 추적하고, 그 결과를 시간에 따라 부드럽게 보여줌
+    Track values ​​and display the results smoothly over time.
     """
 
     def __init__(self, window_size=20, fmt=None):
         if fmt is None:
             fmt = "{median:.4f} ({global_avg:.4f})"
-        self.deque = deque(maxlen=window_size) # window_size 초과 시 가장 처음 index부터 삭제
-        self.total = 0.0 # 모든 값의 합
-        self.count = 0 # 값의 개수
-        self.fmt = fmt # 출력 형식
+        self.deque = deque(maxlen=window_size) # If window_size is exceeded, delete from the very first index.
+        self.total = 0.0 # sum of all values
+        self.count = 0 # Number of values
+        self.fmt = fmt # Output Format
 
     def update(self, value, n=1):
-        """새로운 값을 n개 추가하고 count, total 업데이트"""
+        """Add n new values ​​and update count and total"""
         self.deque.append(value)
         self.count += n
         self.total += value * n
@@ -41,13 +41,13 @@ class SmoothedValue(object):
         """
         Warning: does not synchronize the deque!
         
-        gpu간의 count와 total 값 동기화
+        Synchronize count and total values ​​between GPUs
         """
         if not is_dist_avail_and_initialized():
             return
         t = torch.tensor([self.count, self.total], dtype=torch.float64, device='cuda')
-        dist.barrier() # 모든 process에서 count와 total 값을 tensor 형태로 준비할 때 까지 대기
-        dist.all_reduce(t) # 각 process의 tensor을 모두 합해 동일한 값으로 준비
+        dist.barrier() # Wait until all processes prepare count and total values ​​in tensor format.
+        dist.all_reduce(t) # Combine all tensors of each process and prepare them as the same value.
         t = t.tolist() 
         self.count = int(t[0]) # float64 -> int
         self.total = t[1]
@@ -90,7 +90,7 @@ class MetricLogger(object):
         self.delimiter = delimiter
 
     def update(self, **kwargs):
-        """scalar 지표 업데이트"""
+        """Update scalar indicator"""
         for k, v in kwargs.items():
             if v is None:
                 continue
@@ -100,7 +100,7 @@ class MetricLogger(object):
             self.meters[k].update(v)
 
     def __getattr__(self, attr):
-        """지표의 이름으로 dictionary에 접근할 수 있게 하는 method"""
+        """Method that allows access to the dictionary by the name of the indicator"""
         if attr in self.meters:
             return self.meters[attr]
         if attr in self.__dict__:
@@ -126,26 +126,26 @@ class MetricLogger(object):
 
     def log_every(self, iterable, print_freq, header=None):
         """
-        iterator 객체를 순회하면서 데이터를 yield하고, print_freq마다 학습 진행 상황을 출력
-        학습 과정에서 성능을 추적하고 기록
+        Iterate over the iterator object, yield data, and print out the learning progress at each print_freq
+        Track and record performance during the learning process
 
-        header: 로그 메시지 앞에 덧붙일 문자열
+        header: A string to prepend to the log message
         """
         i = 0
         if not header:
             header = ''
         start_time = time.time()
         end = time.time()
-        # 각 시간을 평균과 최댓값으로 관리
-        iter_time = SmoothedValue(fmt='{avg:.4f} (max: {max:.4f})') # 반복에 소요되는 시간(window size = 20)
-        data_time = SmoothedValue(fmt='{avg:.4f} (max: {max:.4f})') # 데이터 로딩 시간(window size = 20)
+        # Manage each hour with average and maximum values
+        iter_time = SmoothedValue(fmt='{avg:.4f} (max: {max:.4f})') # Time taken for iteration (window size = 20)
+        data_time = SmoothedValue(fmt='{avg:.4f} (max: {max:.4f})') # Data loading time (window size = 20)
         space_fmt = ':' + str(len(str(len(iterable)))) + 'd' # ex) :5d
         # Log msg format
         log_msg = [
             header,
-            '[{0' + space_fmt + '}/{1}]', # 반복 횟수
-            'eta: {eta}', # eta: 예상 소요 시간
-            '{meters}', # 성능 지표
+            '[{0' + space_fmt + '}/{1}]', # Number of repetitions
+            'eta: {eta}', # eta: Estimated time required
+            '{meters}', # Performance metrics
             'time: {time}', # iter_time
             'data: {data}' # data_time
         ]
@@ -155,13 +155,13 @@ class MetricLogger(object):
         MB = 1024.0 * 1024.0
         
         for obj in iterable:
-            data_time.update(time.time() - end) # 데이터를 가져오는데 걸리는 시간
+            data_time.update(time.time() - end) # How long does it take to get data?
             yield obj # batch
-            iter_time.update(time.time() - end) # 한 번 반복에 걸리는 시간
-            if i % print_freq == 0 or i == len(iterable) - 1: # 출력 주기 또는 마지막인 경우
-                eta_seconds = iter_time.global_avg * (len(iterable) - i) # (한 번 반복하는데 필요한 평균 시간) x (남은 수)
-                eta_string = str(datetime.timedelta(seconds=int(eta_seconds))) # 초 단위의 시간 간격으로 변환
-                # Log msg 출력
+            iter_time.update(time.time() - end) # Time taken for one repetition
+            if i % print_freq == 0 or i == len(iterable) - 1: # If the output cycle is or is the last
+                eta_seconds = iter_time.global_avg * (len(iterable) - i) # (average time required for one repetition) x (number remaining)
+                eta_string = str(datetime.timedelta(seconds=int(eta_seconds))) # Convert time intervals to seconds
+                # Log msg output
                 if torch.cuda.is_available():
                     print(log_msg.format(
                         i, len(iterable), eta=eta_string,
@@ -177,7 +177,7 @@ class MetricLogger(object):
             end = time.time()
         total_time = time.time() - start_time
         total_time_str = str(datetime.timedelta(seconds=int(total_time)))
-        # 소요 시간 정보 출력
+        # Output time information
         print('{} Total time: {} ({:.4f} s / it)'.format(
             header, total_time_str, total_time / len(iterable)))
 
@@ -241,17 +241,17 @@ class MetricLogger(object):
         print('{} Total time: {} ({:.4f} s / it)'.format(
             header, total_time_str, total_time / total_len))
 
-# 기록 및 시각화
+# Record and visualize
 class TensorboardLogger(object):
     def __init__(self, log_dir):
         self.writer = SummaryWriter(logdir=log_dir)
-        self.step = 0 # log 단계
+        self.step = 0 # log step
         
     def set_step(self, step=None):
-        # step이 전달되면 step을 설정
+        # Set step when step is passed
         if step is not None:
             self.step = step
-        # 전달되지 않으면 step에 1을 더함
+        # If not passed, add 1 to step
         else:
             self.step += 1
     
@@ -265,7 +265,7 @@ class TensorboardLogger(object):
             assert isinstance(v, (float, int))
             self.writer.add_scalar(head + "/" + k, v, self.step if step is None else step)
 
-    # 현재까지 기록된 모든 log를 디스크에 저장
+    # Save all logs recorded so far to disk
     def flush(self):
         self.writer.flush()
 
@@ -280,9 +280,9 @@ def _load_checkpoint_for_ema(model_ema, checkpoint):
     """
     Workaround for ModelEma._load_checkpoint to accept an already-loaded object
     """
-    mem_file = io.BytesIO() # 메모리에 임시로 공간을 만듬
-    torch.save(checkpoint, mem_file) # checkpoint를 mem_file 변수에 저장
-    mem_file.seek(0) # 시작 위치로 이동
+    mem_file = io.BytesIO() # Create temporary space in memory
+    torch.save(checkpoint, mem_file) # Save checkpoint to mem_file variable
+    mem_file.seek(0) # Go to starting position
     model_ema._load_checkpoint(mem_file)
 
 
@@ -446,8 +446,8 @@ def get_grad_norm_(parameters, norm_type: float = 2.0) -> torch.Tensor:
 
 def wd_scheduler(base_value, final_value, start_epoch, epochs, warmup_epochs=0, start_warmup_wd=0.):
     """
-    base_value: 최댓값
-    final_value: 최종값
+    base_value: maximum value
+    final_value: final value
     """
     warmup_schedule = np.array([])
     if start_warmup_wd != 0:
@@ -455,22 +455,22 @@ def wd_scheduler(base_value, final_value, start_epoch, epochs, warmup_epochs=0, 
     else:
         pass
     if warmup_epochs > 0:
-        # warmup의 처음 value에서 base_value까지를 선형으로 설정
+        # Set the initial value of warmup to base_value linearly
         warmup_schedule = np.linspace(start_warmup_wd, base_value, warmup_epochs)
 
-    # warmup을 제외한 본 학습의 epoch 수
+    # Number of epochs for this training excluding warmup
     iters = np.arange(epochs - warmup_epochs)
 
-    # 본 학습의 schedule
-    # 진폭: 0.5 * (base_value - final_value), 주기: 2 * pi * n_iters
+    # Schedule for this lesson
+    # Amplitude: 0.5 * (base_value - final_value), Period: 2 * pi * n_iters
     schedule = np.array(
         [final_value + 0.5 * (base_value - final_value) * (1 + math.cos(math.pi * i / (len(iters)))) for i in iters]
     )
 
-    # 전체 학습의 schedule
+    # Schedule of the entire study
     schedule = np.concatenate((warmup_schedule, schedule))
 
-    assert len(schedule) == epochs # 유효성 확인
+    assert len(schedule) == epochs # Validation
     return np.asarray(schedule[start_epoch:epochs + 1])
 
 class CosineAnnealingWarmUpRestarts():
@@ -690,16 +690,16 @@ def create_ds_config(args):
                         "eps": args.opt_eps  # Preventing emission
                     }
                 },
-                # 추론 시
+                # When making inferences
                 # "fp16": {
                 #     "enabled": not args.bf16,
-                #     "loss_scale": 0,  # over, underflow 발생 시 자동으로 scaling 동적 조정
-                #     "initial_scale_power": 16,  # 동적으로 조정할 때 scaling의 값을 2의 몇 제곱으로 할 것인지
-                #     "loss_scale_window": 500,  # scaling 값에 대한 업데이트 주기
-                #     "hysteresis": 2,  # 2번 이상의 underflow가 있을 때 scaling을 사용
-                #     "min_loss_scale": 1  # 최소 scaling 값
+                #     "loss_scale": 0,  # Automatically dynamically adjust scaling when overflow or underflow occurs
+                #     "initial_scale_power": 16, # How many powers of 2 should the scaling value be when dynamically adjusting
+                #     "loss_scale_window": 500, # How often should we update the scaling value
+                #     "hysteresis": 2, # Use scaling when there are more than 2 underflows
+                #     "min_loss_scale": 1 # Minimum scaling value
                 # },
-                # bf16 사용
+                # Using bf16
                 "bf16": {
                     "enabled": args.bf16
                 },

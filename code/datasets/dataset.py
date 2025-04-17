@@ -162,7 +162,7 @@ class Phoenix2014Video(Dataset):
         
         buffer = buffer.permute(0, 2, 3, 1) # (T, H, W, C)
         buffer = tensor_normalize(buffer, [0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-        # spatial sampling을 위해 shape 변형
+        # Shape deformation for spatial sampling
         buffer = buffer.permute(3, 0, 1, 2) # (C, T, H, W)
 
         # for i, frame in enumerate(buffer.permute(1, 0, 2, 3)):
@@ -183,13 +183,13 @@ class Phoenix2014Video(Dataset):
                 args.reprob, mode=args.remode, max_count=args.recount,
                 num_splits=args.recount, device='cpu'
             )
-            # random erasing을 위해 shape 변형
+            # Shape transformation for random erasing
             buffer = buffer.permute(1, 0, 2, 3) # (T, C, H, W)
             buffer = random_erasing(buffer)
-            # 모델의 입력값으로 사용하기 위해 shape 변형
+            # Shape transformation for use as input to the model
             buffer = buffer.permute(1, 0, 2, 3) # (C, T, H, W)
         
-    #    # 역정규화하여 디버깅용 이미지 저장
+    #    # Denormalize and save image for debugging
     #     for i, frame in enumerate(buffer.permute(1, 0, 2, 3)):  # (C, T, H, W) -> (T, C, H, W)
     #         denormalized_frame = tensor_denormalize(frame, [0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
     #         transforms.ToPILImage()(denormalized_frame).save(f"debug_denorm_frame_{i}.png")
@@ -307,30 +307,30 @@ class Phoenix2014Video(Dataset):
 
 def get_selected_indexs(vlen, tmin=1, tmax=1, max_num_frames=400):
     """
-    temporal augmentation(tmin, tmax)에 따라 선택된 프레임 인덱스를
-    최종적으로 max_num_frames로 맞추어 반환합니다.
-    
-    vlen: 전체 프레임 수
-    tmin, tmax: temporal augment 범위
-    max_num_frames: 최종적으로 고정할 프레임 수
+    Based on temporal augmentation(tmin, tmax), the selected frame index is returned, 
+    finally adjusted to max_num_frames.
+
+    vlen: total number of frames
+    tmin, tmax: temporal augment range
+    max_num_frames: number of frames to be finally fixed
     """
-    # tmin==1, tmax==1인 경우는 별도 로직(기존과 동일) --------------------------------
+    # If tmin==1, tmax==1, separate logic (same as before) --------------------------------
     if tmin == 1 and tmax == 1:
         if vlen <= max_num_frames:
-            # 모든 프레임을 선택
+            # Select all frames
             frame_index = np.arange(vlen)
             
             if vlen < max_num_frames:
-                # 부족한 프레임 수만큼 마지막 프레임을 반복하여 패딩
+                # Padding by repeating the last frame as many times as the number of missing frames
                 pad_length = max_num_frames - vlen
                 pad_indices = np.full(pad_length, vlen - 1, dtype=int)
                 frame_index = np.concatenate([frame_index, pad_indices])
                 
-            # 최종적으로 frame_index의 길이가 max_num_frames인지 확인
-            assert len(frame_index) == max_num_frames, f"frame_index 길이가 {max_num_frames}이 아닙니다. 실제 길이: {len(frame_index)}"
+            # Finally, check if the length of frame_index is max_num_frames
+            assert len(frame_index) == max_num_frames, f"frame_index length is not {max_num_frames}. Actual length: {len(frame_index)}"
         
         else:
-            # vlen이 max_num_frames보다 클 때는 중앙에서 max_num_frames만큼 선택
+            # When vlen is greater than max_num_frames, select max_num_frames from the center.
             sequence = np.arange(vlen)
             an = (vlen - max_num_frames) // 2
             en = vlen - max_num_frames - an
@@ -339,43 +339,53 @@ def get_selected_indexs(vlen, tmin=1, tmax=1, max_num_frames=400):
         return frame_index
     
     # if tmin and tamx != 1: random temporal augment logic -----------------------
-    min_len = int(tmin * vlen)
-    max_len = min(max_num_frames, int(tmax * vlen))
+    # min_len = int(tmin * vlen)
+    # max_len = min(max_num_frames, int(tmax * vlen))
+    min_len = max(1, int(tmin * vlen))  # Ensure min_len is at least 1
+    max_len = max(1, min(max_num_frames, int(tmax * vlen)))  # Ensure max_len is at least 1 and capped by max_num_frames
+
+    # Safeguard: Ensure min_len <= max_len
+    if min_len > max_len:
+        # warnings.warn(
+        #     f"min_len ({min_len}) is greater than max_len ({max_len}). "
+        #     "Adjusting min_len to match max_len."
+        # )
+        min_len = max_len
 
     # print(f"======================================Min_len: {min_len}, Max_len: {max_len}")
 
     # select a random length from range min_len to max_len
     chosen_len = np.random.randint(min_len, max_len + 1)
 
-    # chosen_len이 vlen 이하이면 vlen 중에서 chosen_len개를 무작위로 뽑음
+    # If chosen_len is less than or equal to vlen, randomly select chosen_len items from vlen.
     if chosen_len <= vlen:
         selected_index = sorted(np.random.permutation(np.arange(vlen))[:chosen_len])
     else:
-        # chosen_len이 vlen보다 크면, 부족한 만큼 중복 샘플링해서 붙인다
+        # If chosen_len is greater than vlen, duplicate samples are added to fill the gap.
         extra = chosen_len - vlen
         copied_index = np.random.randint(0, vlen, extra)
         selected_index = sorted(np.concatenate([np.arange(vlen), copied_index]))
 
-    # 이제 selected_index의 길이가 chosen_len이지만, 최종적으로 max_num_frames로 맞춤
+    # Now the length of selected_index is chosen_len, but it is ultimately adjusted to max_num_frames.
     if chosen_len < max_num_frames:
-        # chosen_len이 부족하면 마지막 프레임 반복
+        # If chosen_len is insufficient, repeat last frame
         while len(selected_index) < max_num_frames:
             selected_index.append(selected_index[-1])
         frame_index = np.array(selected_index)
     
     elif chosen_len > max_num_frames:
-        # chosen_len이 너무 많으면 균등 간격으로 서브샘플링
+        # If chosen_len is too large, subsample at even intervals
         step = chosen_len / max_num_frames
         new_index = [int(round(i * step)) for i in range(max_num_frames)]
         new_index = [min(idx, chosen_len - 1) for idx in new_index]
         frame_index = np.array([selected_index[i] for i in new_index])
     
     else:
-        # chosen_len == max_num_frames인 경우
+        # If chosen_len == max_num_frames
         frame_index = np.array(selected_index)
 
-    # 최종적으로 frame_index의 길이가 max_num_frames인지 확인
-    assert len(frame_index) == max_num_frames, f"frame_index 길이가 {max_num_frames}이 아닙니다. 실제 길이: {len(frame_index)}"
+    # Finally, check if the length of frame_index is max_num_frames
+    assert len(frame_index) == max_num_frames, f"frame_index length is not {max_num_frames}. Actual length: {len(frame_index)}"
     return frame_index
 
 

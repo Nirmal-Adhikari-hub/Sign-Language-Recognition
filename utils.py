@@ -446,8 +446,8 @@ def get_grad_norm_(parameters, norm_type: float = 2.0) -> torch.Tensor:
 
 def wd_scheduler(base_value, final_value, start_epoch, epochs, warmup_epochs=0, start_warmup_wd=0.):
     """
-    base_value: 최댓값
-    final_value: 최종값
+    base_value: maximum value
+    final_value: final value
     """
     warmup_schedule = np.array([])
     if start_warmup_wd != 0:
@@ -455,22 +455,22 @@ def wd_scheduler(base_value, final_value, start_epoch, epochs, warmup_epochs=0, 
     else:
         pass
     if warmup_epochs > 0:
-        # warmup의 처음 value에서 base_value까지를 선형으로 설정
+        # Set the initial value of warmup to base_value linearly
         warmup_schedule = np.linspace(start_warmup_wd, base_value, warmup_epochs)
 
-    # warmup을 제외한 본 학습의 epoch 수
+    # Number of epochs for this training excluding warmup
     iters = np.arange(epochs - warmup_epochs)
 
-    # 본 학습의 schedule
-    # 진폭: 0.5 * (base_value - final_value), 주기: 2 * pi * n_iters
+    # Schedule for this lesson
+    # Amplitude: 0.5 * (base_value - final_value), Period: 2 * pi * n_iters
     schedule = np.array(
         [final_value + 0.5 * (base_value - final_value) * (1 + math.cos(math.pi * i / (len(iters)))) for i in iters]
     )
 
-    # 전체 학습의 schedule
+    # Schedule of the entire study
     schedule = np.concatenate((warmup_schedule, schedule))
 
-    assert len(schedule) == epochs # 유효성 확인
+    assert len(schedule) == epochs # Validation
     return np.asarray(schedule[start_epoch:epochs + 1])
 
 class CosineAnnealingWarmUpRestarts():
@@ -565,11 +565,11 @@ def save_model(args, epoch, model, model_without_ddp, optimizer, loss_scaler, mo
         tag_name = "checkpoint-%s" % model_name
         model.save_checkpoint(save_dir=local_save_dir, tag=tag_name, client_state=client_state)
 
-# 모델 학습을 재개하거나 평가할 때 저장된 checkpoint를 불러옴
+# Retrieve a saved checkpoint when resuming model training or evaluating it.
 def auto_load_model(args, model, model_without_ddp, optimizer, loss_scaler, model_ema=None):
     output_dir = Path(args.output_dir)
 
-    # deepspeed을 사용할 것이므로 필요하지 않음
+    # Not needed since we will be using deepspeed
     if loss_scaler is not None:
         # torch.amp
         if args.test_best and args.eval:
@@ -605,7 +605,7 @@ def auto_load_model(args, model, model_without_ddp, optimizer, loss_scaler, mode
     else:
         # deepspeed, only support '--auto_resume'.
         flag = False
-        # evaludation을 하는 것이고, 가장 좋은 결괏값을 뽑는 경우
+        # It is to evaluate and select the best result.
         if args.test_best and args.eval:
             try:
                 load_specific_model(model, model_ema, args, output_dir, model_name='best')
@@ -637,19 +637,19 @@ def auto_load_model(args, model, model_without_ddp, optimizer, loss_scaler, mode
             else:
                 print('No other models')
 
-# checkpoint 불러오기
+# Load checkpoint
 def load_specific_model(model, model_ema, args, output_dir, model_name):
     args.resume = os.path.join(output_dir, f'checkpoint-{model_name}')
     print(f"Auto resume the {model_name} checkpoint")
-    # DeepSpeedEngine.load_checkpoint -> load_path(load 경로), client_states(state dictionary)
-    _, client_states = model.load_checkpoint(args.output_dir, tag=f'checkpoint-{model_name}') # output_dir에서 checkpoint-{model_name} 가져오기
+    # DeepSpeedEngine.load_checkpoint -> load_path(load path), client_states(state dictionary)
+    _, client_states = model.load_checkpoint(args.output_dir, tag=f'checkpoint-{model_name}') # Import checkpoint-{model_name} from output_dir
     args.start_epoch = client_states['epoch'] + 1
     if model_ema is not None:
         if args.model_ema:
             _load_checkpoint_for_ema(model_ema, client_states['model_ema'])
 
 
-# Deepspeed을 사용하여 분산 학습을 설정하기 위한 구성 파일(config.json) 생성
+# Generate a configuration file (config.json) to set up distributed training using Deepspeed.
 def create_ds_config(args):
     args.deepspeed_config = os.path.join(args.output_dir, "deepspeed_config.json") # 경로 설정
     with open(args.deepspeed_config, mode="w") as writer:
